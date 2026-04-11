@@ -2,3 +2,14 @@
 name = "lv-inference"
 version = "0.1.0"
 edition = "2024"
+
+[dependencies]
+lv-core = { path = "../lv-core" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures = "0.3"
+tokio-stream = "0.1"
