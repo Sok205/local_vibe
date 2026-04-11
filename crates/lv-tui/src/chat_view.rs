@@ -13,6 +13,12 @@ pub struct ChatView {
     pub scroll: u16,
 }
 
+impl Default for ChatView {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChatView {
     pub fn new() -> Self {
         Self {

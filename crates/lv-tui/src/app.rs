@@ -78,11 +78,8 @@ pub async fn run_tui(
 
     loop {
         // Drain all pending backend events without blocking
-        loop {
-            match event_rx.try_recv() {
-                Ok(ev) => handle_app_event(ev, &mut state),
-                Err(_) => break,
-            }
+        while let Ok(ev) = event_rx.try_recv() {
+            handle_app_event(ev, &mut state);
         }
 
         terminal.draw(|frame| {
@@ -135,36 +132,34 @@ pub async fn run_tui(
             frame.set_cursor_position((cursor_x, cursor_y));
         })?;
 
-        if event::poll(poll_interval)? {
-            if let Event::Key(key) = event::read()? {
-                let action = state.input.handle_key(key);
-                match action {
-                    InputAction::Quit => {
+        if event::poll(poll_interval)? && let Event::Key(key) = event::read()? {
+            let action = state.input.handle_key(key);
+            match action {
+                InputAction::Quit => {
+                    let _ = command_tx.send(AppCommand::Quit).await;
+                    break;
+                }
+                InputAction::Submit(text) => {
+                    if text.trim() == "/quit" {
                         let _ = command_tx.send(AppCommand::Quit).await;
                         break;
                     }
-                    InputAction::Submit(text) => {
-                        if text.trim() == "/quit" {
-                            let _ = command_tx.send(AppCommand::Quit).await;
-                            break;
-                        }
-                        if let Some(path) = text.trim().strip_prefix("/index ") {
-                            let _ = command_tx
-                                .send(AppCommand::Index { path: path.to_string() })
-                                .await;
-                        } else {
-                            state.chat.push_message(Message {
-                                role: Role::User,
-                                content: text.clone(),
-                            });
-                            let _ = command_tx.send(AppCommand::Ask { query: text }).await;
-                        }
+                    if let Some(path) = text.trim().strip_prefix("/index ") {
+                        let _ = command_tx
+                            .send(AppCommand::Index { path: path.to_string() })
+                            .await;
+                    } else {
+                        state.chat.push_message(Message {
+                            role: Role::User,
+                            content: text.clone(),
+                        });
+                        let _ = command_tx.send(AppCommand::Ask { query: text }).await;
                     }
-                    InputAction::ScrollUp => state.chat.scroll_up(),
-                    InputAction::ScrollDown => state.chat.scroll_down(),
-                    InputAction::ToggleContext => state.context.toggle(),
-                    InputAction::None => {}
                 }
+                InputAction::ScrollUp => state.chat.scroll_up(),
+                InputAction::ScrollDown => state.chat.scroll_down(),
+                InputAction::ToggleContext => state.context.toggle(),
+                InputAction::None => {}
             }
         }
     }

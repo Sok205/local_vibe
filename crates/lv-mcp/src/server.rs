@@ -43,6 +43,7 @@ pub struct IndexDirectoryParams {
 pub struct VibeMcpServer {
     backend: Arc<dyn InferenceBackend>,
     store: Arc<dyn VectorStore>,
+    #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
 

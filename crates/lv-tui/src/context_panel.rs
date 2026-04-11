@@ -13,6 +13,12 @@ pub struct ContextPanel {
     pub visible: bool,
 }
 
+impl Default for ContextPanel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ContextPanel {
     pub fn new() -> Self {
         Self {

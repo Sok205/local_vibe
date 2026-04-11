@@ -8,6 +8,12 @@ pub struct EscalatingRouter {
     tiers: Vec<(ModelTier, Arc<dyn InferenceBackend>)>,
 }
 
+impl Default for EscalatingRouter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EscalatingRouter {
     pub fn new() -> Self {
         Self { tiers: Vec::new() }

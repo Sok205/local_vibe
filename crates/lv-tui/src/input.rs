@@ -14,6 +14,12 @@ pub struct InputBuffer {
     pub cursor: usize,
 }
 
+impl Default for InputBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InputBuffer {
     pub fn new() -> Self {
         Self { buf: Vec::new(), cursor: 0 }
