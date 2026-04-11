@@ -35,6 +35,8 @@ pub struct ModelConfig {
     pub backend: String,
     #[serde(default = "default_quantization")]
     pub quantization: String,
+    pub model_path: Option<PathBuf>,
+    pub tokenizer_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -77,16 +79,16 @@ pub struct TuiConfig {
 }
 
 fn default_fast_model() -> ModelConfig {
-    ModelConfig { name: "gemma-4-e2b-it".into(), backend: "mlx-lm".into(), quantization: "4bit".into() }
+    ModelConfig { name: "gemma-4-e2b-it".into(), backend: "mlx-lm".into(), quantization: "4bit".into(), model_path: None, tokenizer_path: None }
 }
 fn default_medium_model() -> ModelConfig {
-    ModelConfig { name: "gemma-4-26b-a4b-it".into(), backend: "mlx-lm".into(), quantization: "4bit".into() }
+    ModelConfig { name: "gemma-4-26b-a4b-it".into(), backend: "mlx-lm".into(), quantization: "4bit".into(), model_path: None, tokenizer_path: None }
 }
 fn default_strong_model() -> ModelConfig {
-    ModelConfig { name: "gemma-4-31b-it".into(), backend: "mlx-lm".into(), quantization: "4bit".into() }
+    ModelConfig { name: "gemma-4-31b-it".into(), backend: "mlx-lm".into(), quantization: "4bit".into(), model_path: None, tokenizer_path: None }
 }
 fn default_embedding_model() -> ModelConfig {
-    ModelConfig { name: "nomic-embed-text".into(), backend: "mlx-lm".into(), quantization: "fp16".into() }
+    ModelConfig { name: "nomic-embed-text".into(), backend: "mlx-lm".into(), quantization: "fp16".into(), model_path: None, tokenizer_path: None }
 }
 fn default_backend() -> String { "mlx-lm".into() }
 fn default_quantization() -> String { "4bit".into() }

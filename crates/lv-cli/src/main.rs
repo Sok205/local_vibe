@@ -11,6 +11,7 @@ use lv_core::types::{
 };
 use lv_core::Config;
 use lv_inference::mlx_lm::MlxLmBackend;
+use lv_metal::MetalBackend;
 use lv_rag::code_graph::TreeSitterGraph;
 use lv_rag::query::QueryEngine;
 use lv_rag::store::LanceStore;
@@ -92,11 +93,18 @@ fn run_models(config: &Config) -> anyhow::Result<()> {
 }
 
 async fn setup(config: &Config) -> anyhow::Result<(Arc<EscalatingRouter>, Arc<QueryEngine>, Arc<RwLock<TreeSitterGraph>>)> {
-    let backend = Arc::new(MlxLmBackend::connect(
-        &config.models.medium.name,
-        8080,
-        ModelTier::Medium,
-    ));
+    let backend: Arc<dyn InferenceBackend> = match config.models.medium.backend.as_str() {
+        "metal" => {
+            let model_path = config.models.medium.model_path.as_ref()
+                .ok_or_else(|| anyhow::anyhow!("model_path required for metal backend"))?;
+            let tokenizer_path = config.models.medium.tokenizer_path.as_ref()
+                .ok_or_else(|| anyhow::anyhow!("tokenizer_path required for metal backend"))?;
+            Arc::new(MetalBackend::load(model_path, tokenizer_path, ModelTier::Medium)?)
+        }
+        _ => {
+            Arc::new(MlxLmBackend::connect(&config.models.medium.name, 8080, ModelTier::Medium))
+        }
+    };
 
     let router = Arc::new(
         EscalatingRouter::new()
