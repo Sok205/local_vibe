@@ -56,7 +56,6 @@ impl MlxLmBackend {
     async fn wait_for_ready(&self) -> Result<()> {
         let url = format!("{}/v1/models", self.base_url());
         for attempt in 0..60 {
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             match self.client.get(&url).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     info!("mlx-lm server ready after {}s", attempt + 1);
@@ -66,6 +65,7 @@ impl MlxLmBackend {
                     debug!("waiting for mlx-lm server... attempt {}", attempt + 1);
                 }
             }
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
         Err(VibeError::BackendUnavailable(
             "mlx-lm server did not become ready within 60 seconds".into(),
@@ -99,17 +99,11 @@ fn start_server(model_name: &str, port: u16) -> Result<Child> {
 
 impl Drop for MlxLmBackend {
     fn drop(&mut self) {
-        // Child has kill_on_drop(true), so dropping it kills the process.
-        // We attempt a best-effort async kill here as well.
-        let process = self.process.clone();
-        tokio::spawn(async move {
-            let mut guard = process.write().await;
-            if let Some(mut child) = guard.take() {
-                if let Err(e) = child.kill().await {
-                    warn!("failed to kill mlx-lm server process: {e}");
-                }
-            }
-        });
+        if let Ok(mut guard) = self.process.try_write()
+            && let Some(ref mut child) = *guard
+        {
+            let _ = child.start_kill();
+        }
     }
 }
 
@@ -224,8 +218,7 @@ impl InferenceBackend for MlxLmBackend {
                     match serde_json::from_str::<StreamEvent>(&data) {
                         Ok(event) => {
                             if let Some(choice) = event.choices.into_iter().next() {
-                                let finished =
-                                    choice.finish_reason.as_deref() == Some("stop");
+                                let finished = choice.finish_reason.is_some();
                                 let delta = choice.delta.content.unwrap_or_default();
                                 if tx.send(Ok(CompletionChunk { delta, finished })).await.is_err() {
                                     return;
