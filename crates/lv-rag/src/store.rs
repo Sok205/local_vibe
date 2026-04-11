@@ -143,9 +143,10 @@ impl lv_core::traits::VectorStore for LanceStore {
         {
             let guard = self.table.read().await;
             if let Some(table) = &*guard {
-                let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
+                let batches: Box<dyn arrow_array::RecordBatchReader + Send> =
+                    Box::new(RecordBatchIterator::new(vec![Ok(batch)], schema));
                 table
-                    .add(Box::new(batches))
+                    .add(batches)
                     .execute()
                     .await
                     .map_err(|e| VibeError::Store(format!("Failed to add documents: {e}")))?;
@@ -155,17 +156,19 @@ impl lv_core::traits::VectorStore for LanceStore {
 
         let mut guard = self.table.write().await;
         if let Some(table) = &*guard {
-            let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
+            let batches: Box<dyn arrow_array::RecordBatchReader + Send> =
+                Box::new(RecordBatchIterator::new(vec![Ok(batch)], schema));
             table
-                .add(Box::new(batches))
+                .add(batches)
                 .execute()
                 .await
                 .map_err(|e| VibeError::Store(format!("Failed to add documents: {e}")))?;
         } else {
-            let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
+            let batches: Box<dyn arrow_array::RecordBatchReader + Send> =
+                Box::new(RecordBatchIterator::new(vec![Ok(batch)], schema));
             let table = self
                 .db
-                .create_table("chunks", Box::new(batches))
+                .create_table("chunks", batches)
                 .execute()
                 .await
                 .map_err(|e| VibeError::Store(format!("Failed to create table: {e}")))?;

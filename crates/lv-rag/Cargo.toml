@@ -11,9 +11,9 @@ serde_json = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
-lancedb = "0.16"
-arrow-array = "53"
-arrow-schema = "53"
+lancedb = "0.27"
+arrow-array = "57"
+arrow-schema = "57"
 blake3 = "1"
 walkdir = "2"
 pdf-extract = "0.7"
