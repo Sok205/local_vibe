@@ -2,3 +2,22 @@
 name = "lv-cli"
 version = "0.1.0"
 edition = "2024"
+
+[[bin]]
+name = "local-vibe"
+path = "src/main.rs"
+
+[dependencies]
+lv-core = { path = "../lv-core" }
+lv-inference = { path = "../lv-inference" }
+lv-rag = { path = "../lv-rag" }
+lv-router = { path = "../lv-router" }
+lv-mcp = { path = "../lv-mcp" }
+lv-tui = { path = "../lv-tui" }
+tokio = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+futures = "0.3"
