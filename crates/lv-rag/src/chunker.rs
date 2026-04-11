@@ -2,6 +2,8 @@ use std::path::Path;
 
 use lv_core::traits::Chunker;
 use lv_core::types::Chunk;
+use rustc_hash::FxHashMap;
+use tree_sitter::Language;
 
 pub struct OverlappingChunker {
     pub chunk_size: usize,
@@ -43,6 +45,132 @@ impl Chunker for OverlappingChunker {
                 break;
             }
         }
+        chunks
+    }
+}
+
+// --- AstChunker ---
+
+const AST_TOP_LEVEL_KINDS: &[&str] = &[
+    "function_item",
+    "struct_item",
+    "trait_item",
+    "impl_item",
+    "enum_item",
+    "const_item",
+    "mod_item",
+    "function_definition",
+    "class_definition",
+    "decorated_definition",
+];
+
+pub struct AstChunker {
+    languages: FxHashMap<String, Language>,
+}
+
+impl AstChunker {
+    pub fn new() -> Self {
+        let mut languages: FxHashMap<String, Language> = FxHashMap::default();
+        languages.insert("rust".to_string(), tree_sitter_rust::LANGUAGE.into());
+        languages.insert(
+            "typescript".to_string(),
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        );
+        languages.insert("python".to_string(), tree_sitter_python::LANGUAGE.into());
+        Self { languages }
+    }
+
+    fn ext_to_lang(ext: &str) -> Option<&'static str> {
+        match ext {
+            "rs" => Some("rust"),
+            "ts" | "tsx" => Some("typescript"),
+            "py" => Some("python"),
+            _ => None,
+        }
+    }
+}
+
+impl Default for AstChunker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Chunker for AstChunker {
+    fn chunk(&self, text: &str, file_path: Option<&Path>) -> Vec<Chunk> {
+        let ext = file_path
+            .and_then(|p| p.extension())
+            .and_then(|e| e.to_str())
+            .unwrap_or_default();
+
+        let lang_name = match Self::ext_to_lang(ext) {
+            Some(l) => l,
+            None => {
+                return vec![Chunk {
+                    text: text.to_string(),
+                    start_offset: 0,
+                    end_offset: text.len(),
+                }];
+            }
+        };
+
+        let language = match self.languages.get(lang_name) {
+            Some(l) => l.clone(),
+            None => {
+                return vec![Chunk {
+                    text: text.to_string(),
+                    start_offset: 0,
+                    end_offset: text.len(),
+                }];
+            }
+        };
+
+        let mut parser = tree_sitter::Parser::new();
+        if parser.set_language(&language).is_err() {
+            return vec![Chunk {
+                text: text.to_string(),
+                start_offset: 0,
+                end_offset: text.len(),
+            }];
+        }
+
+        let tree = match parser.parse(text, None) {
+            Some(t) => t,
+            None => {
+                return vec![Chunk {
+                    text: text.to_string(),
+                    start_offset: 0,
+                    end_offset: text.len(),
+                }];
+            }
+        };
+
+        let root = tree.root_node();
+        let mut chunks = Vec::new();
+        let mut cursor = root.walk();
+
+        for child in root.children(&mut cursor) {
+            if AST_TOP_LEVEL_KINDS.contains(&child.kind()) {
+                let start = child.start_byte();
+                let end = child.end_byte();
+                if let Some(chunk_text) = text.get(start..end) {
+                    chunks.push(Chunk {
+                        text: chunk_text.to_string(),
+                        start_offset: start,
+                        end_offset: end,
+                    });
+                }
+            }
+        }
+
+        if chunks.is_empty() {
+            chunks.push(Chunk {
+                text: text.to_string(),
+                start_offset: 0,
+                end_offset: text.len(),
+            });
+        }
+
         chunks
     }
 }
