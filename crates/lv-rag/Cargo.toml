@@ -2,3 +2,27 @@
 name = "lv-rag"
 version = "0.1.0"
 edition = "2024"
+
+[dependencies]
+lv-core = { path = "../lv-core" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+lancedb = "0.16"
+arrow-array = "53"
+arrow-schema = "53"
+blake3 = "1"
+walkdir = "2"
+pdf-extract = "0.7"
+scraper = "0.22"
+epub = "2"
+rayon = "1"
+rustc-hash = "2"
+tokio-util = { version = "0.7", features = ["rt"] }
+futures = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
