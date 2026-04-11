@@ -4189,6 +4189,7 @@ dependencies = [
  "lv-core",
  "lv-inference",
  "lv-mcp",
+ "lv-metal",
  "lv-rag",
  "lv-router",
  "lv-tui",

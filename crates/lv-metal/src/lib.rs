@@ -2,7 +2,7 @@ pub mod model;
 pub mod sampler;
 pub mod tokenizer;
 
-use crate::model::QuantizedGemma4;
+use crate::model::QuantizedModel;
 use crate::sampler::Sampler;
 use crate::tokenizer::TokenizerWrapper;
 use async_trait::async_trait;
@@ -18,7 +18,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::info;
 
 struct MetalInner {
-    model: QuantizedGemma4,
+    model: QuantizedModel,
     tokenizer: TokenizerWrapper,
 }
 
@@ -30,12 +30,27 @@ pub struct MetalBackend {
 
 impl MetalBackend {
     pub fn load(model_path: &Path, tokenizer_path: &Path, tier: ModelTier) -> Result<Self> {
-        let device = Device::new_metal(0)
-            .map_err(|e| VibeError::Inference(format!("failed to create Metal device: {e}")))?;
+        // TODO: Metal device has incomplete kernel support in Candle 0.8
+        // (missing rms-norm). Use CPU until we upgrade Candle or add custom kernels.
+        let device = if std::env::var("LV_FORCE_CPU").is_ok() {
+            info!("LV_FORCE_CPU set, using CPU device");
+            Device::Cpu
+        } else {
+            match Device::new_metal(0) {
+                Ok(d) => {
+                    info!("Metal device created");
+                    d
+                }
+                Err(e) => {
+                    info!("Metal device failed ({e}), falling back to CPU");
+                    Device::Cpu
+                }
+            }
+        };
 
-        info!("Metal device created");
+        info!("using device: {:?}", device);
 
-        let model = QuantizedGemma4::load(model_path, &device)?;
+        let model = QuantizedModel::load(model_path, &device)?;
         let tokenizer = TokenizerWrapper::from_file(tokenizer_path)?;
 
         let model_name = model_path
@@ -99,10 +114,19 @@ impl InferenceBackend for MetalBackend {
                 }
             };
 
-            let mut logits = match guard.model.forward(&input_tensor, 0) {
+            let logits = match guard.model.forward(&input_tensor, 0) {
                 Ok(l) => l,
                 Err(e) => {
                     let _ = tx.blocking_send(Err(e));
+                    return;
+                }
+            };
+
+            // Squeeze batch dim: [1, vocab] -> [vocab]
+            let mut logits = match logits.squeeze(0) {
+                Ok(l) => l,
+                Err(e) => {
+                    let _ = tx.blocking_send(Err(VibeError::Inference(format!("squeeze failed: {e}"))));
                     return;
                 }
             };
@@ -151,10 +175,17 @@ impl InferenceBackend for MetalBackend {
                     }
                 };
 
-                logits = match guard.model.forward(&next_input, prompt_len + i as usize) {
+                let raw_logits = match guard.model.forward(&next_input, prompt_len + i as usize) {
                     Ok(l) => l,
                     Err(e) => {
                         let _ = tx.blocking_send(Err(e));
+                        return;
+                    }
+                };
+                logits = match raw_logits.squeeze(0) {
+                    Ok(l) => l,
+                    Err(e) => {
+                        let _ = tx.blocking_send(Err(VibeError::Inference(format!("squeeze failed: {e}"))));
                         return;
                     }
                 };

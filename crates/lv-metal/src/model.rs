@@ -1,25 +1,31 @@
 use candle_core::quantized::gguf_file;
 use candle_core::{Device, Tensor};
-use candle_transformers::models::quantized_llama::ModelWeights;
+use candle_transformers::models::quantized_llama::ModelWeights as LlamaWeights;
+use candle_transformers::models::quantized_qwen2::ModelWeights as Qwen2Weights;
 use lv_core::error::VibeError;
 use lv_core::Result;
 use std::path::Path;
 use tracing::info;
 
-/// Quantized Gemma 4 model backed by Candle's quantized llama implementation.
+/// Architecture-aware quantized model loaded from GGUF.
 ///
-/// Candle 0.8 does not ship a dedicated quantized Gemma model. The quantized llama
-/// implementation reads architecture-specific config (head counts, embedding size,
-/// RoPE parameters, etc.) from GGUF metadata, so it works for Gemma-family GGUF
-/// files produced by llama.cpp.
-pub struct QuantizedGemma4 {
-    weights: ModelWeights,
+/// Detects the model architecture from GGUF metadata and uses the
+/// appropriate Candle backend (quantized_llama for LLaMA/Gemma,
+/// quantized_qwen2 for Qwen).
+pub struct QuantizedModel {
+    inner: ModelInner,
     device: Device,
     model_path: std::path::PathBuf,
 }
 
-impl QuantizedGemma4 {
+enum ModelInner {
+    Llama(LlamaWeights),
+    Qwen2(Qwen2Weights),
+}
+
+impl QuantizedModel {
     /// Load a quantized model from a GGUF file.
+    /// Automatically detects the architecture from GGUF metadata.
     pub fn load(model_path: &Path, device: &Device) -> Result<Self> {
         info!("loading GGUF model from {}", model_path.display());
 
@@ -35,38 +41,54 @@ impl QuantizedGemma4 {
             content.metadata.len()
         );
 
-        let weights = ModelWeights::from_gguf(content, &mut file, device)
-            .map_err(|e| VibeError::Inference(format!("failed to load weights: {e}")))?;
+        // Detect architecture from GGUF metadata
+        let arch = content
+            .metadata
+            .get("general.architecture")
+            .and_then(|v| v.to_string().ok())
+            .cloned()
+            .unwrap_or_default();
+
+        info!("detected architecture: {arch:?}");
+
+        let inner = match arch.as_str() {
+            "qwen2" => {
+                info!("using Qwen2 quantized backend");
+                let weights = Qwen2Weights::from_gguf(content, &mut file, device)
+                    .map_err(|e| VibeError::Inference(format!("failed to load Qwen2 weights: {e}")))?;
+                ModelInner::Qwen2(weights)
+            }
+            "llama" | "gemma" | "gemma2" | "gemma3" | "gemma4" | _ => {
+                info!("using LLaMA quantized backend for architecture '{arch}'");
+                let weights = LlamaWeights::from_gguf(content, &mut file, device)
+                    .map_err(|e| VibeError::Inference(format!("failed to load LLaMA weights: {e}")))?;
+                ModelInner::Llama(weights)
+            }
+        };
 
         info!("model weights loaded on {:?}", device);
 
         Ok(Self {
-            weights,
+            inner,
             device: device.clone(),
             model_path: model_path.to_path_buf(),
         })
     }
 
     /// Run a forward pass. Returns logits for the last token in the sequence.
-    ///
-    /// `input_ids` shape: `(batch, seq_len)`
-    /// `seqlen_offset`: position offset for KV cache (0 for prompt, increments for generation).
     pub fn forward(&mut self, input_ids: &Tensor, seqlen_offset: usize) -> Result<Tensor> {
-        self.weights
-            .forward(input_ids, seqlen_offset)
-            .map_err(|e| VibeError::Inference(format!("forward pass failed: {e}")))
+        match &mut self.inner {
+            ModelInner::Llama(w) => w.forward(input_ids, seqlen_offset),
+            ModelInner::Qwen2(w) => w.forward(input_ids, seqlen_offset),
+        }
+        .map_err(|e| VibeError::Inference(format!("forward pass failed: {e}")))
     }
 
     /// Clear the KV cache by reloading the model weights.
-    ///
-    /// Candle 0.8's `quantized_llama::ModelWeights` does not expose a public
-    /// method to clear the per-layer KV cache. As a workaround we reload from
-    /// disk. This is acceptable because cache clearing only happens between
-    /// conversations, not on the hot path.
     pub fn clear_kv_cache(&mut self) {
         info!("clearing KV cache by reloading model");
         match Self::load(&self.model_path, &self.device) {
-            Ok(fresh) => self.weights = fresh.weights,
+            Ok(fresh) => self.inner = fresh.inner,
             Err(e) => {
                 tracing::error!("failed to reload model for cache clear: {e}");
             }
