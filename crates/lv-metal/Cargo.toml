@@ -1,0 +1,19 @@
+[package]
+name = "lv-metal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lv-core = { path = "../lv-core" }
+candle-core = { version = "0.8", features = ["metal"] }
+candle-nn = "0.8"
+candle-transformers = "0.8"
+tokenizers = "0.21"
+tokio = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+futures = "0.3"
+rand = "0.8"
+tokio-stream = "0.1"

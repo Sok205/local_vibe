@@ -8,6 +8,7 @@ members = [
     "crates/lv-mcp",
     "crates/lv-tui",
     "crates/lv-cli",
+    "crates/lv-metal",
 ]
 
 [workspace.dependencies]
