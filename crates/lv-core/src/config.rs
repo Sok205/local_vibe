@@ -3,7 +3,7 @@ use crate::Result;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub models: ModelsConfig,
@@ -101,12 +101,6 @@ fn default_languages() -> Vec<String> { vec!["rust".into(), "typescript".into(),
 fn default_true() -> bool { true }
 fn default_graph_store() -> String { "memory".into() }
 
-impl Default for Config {
-    fn default() -> Self {
-        toml::from_str("").unwrap()
-    }
-}
-
 impl Default for ModelsConfig {
     fn default() -> Self {
         Self {
@@ -157,10 +151,8 @@ impl Config {
             dirs::config_dir().map(|d| d.join("local-vibe/config.toml")).unwrap_or_default(),
         ];
         for path in &candidates {
-            if path.exists() {
-                if let Ok(config) = Self::load(path) {
-                    return config;
-                }
+            if path.exists() && let Ok(config) = Self::load(path) {
+                return config;
             }
         }
         Self::default()
