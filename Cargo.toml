@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/lv-core",
+    "crates/lv-inference",
+    "crates/lv-rag",
+    "crates/lv-router",
+    "crates/lv-mcp",
+    "crates/lv-tui",
+    "crates/lv-cli",
+]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "2"
+anyhow = "1"
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+strip = true
+panic = "abort"
