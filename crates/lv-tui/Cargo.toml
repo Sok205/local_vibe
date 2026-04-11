@@ -2,3 +2,11 @@
 name = "lv-tui"
 version = "0.1.0"
 edition = "2024"
+
+[dependencies]
+lv-core = { path = "../lv-core" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+ratatui = "0.29"
+crossterm = "0.28"
+futures = "0.3"
