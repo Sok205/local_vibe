@@ -148,6 +148,8 @@ pub async fn run_tui(
                 state.model_tier,
                 &state.model_name,
                 state.store_stats.as_ref(),
+                &state.current_db,
+                state.indexing.as_ref(),
             );
 
             // Main area: chat + optional context panel
