@@ -3,10 +3,19 @@ use lv_core::types::{Message, Role};
 use lv_core::Result;
 use std::path::Path;
 
+#[derive(Debug, Clone, Copy)]
+enum TemplateKind {
+    /// Qwen / ChatML: `<|im_start|>role\n...<|im_end|>`
+    ChatMl,
+    /// Gemma 2 / 3 / 4: `<start_of_turn>role\n...<end_of_turn>`
+    Gemma,
+}
+
 pub struct TokenizerWrapper {
     tokenizer: tokenizers::Tokenizer,
     bos_token_id: u32,
     eos_token_ids: Vec<u32>,
+    template: TemplateKind,
 }
 
 impl TokenizerWrapper {
@@ -16,22 +25,33 @@ impl TokenizerWrapper {
 
         let bos_token_id = tokenizer.token_to_id("<bos>").unwrap_or(2);
 
+        let template = if tokenizer.token_to_id("<|im_end|>").is_some() {
+            TemplateKind::ChatMl
+        } else {
+            TemplateKind::Gemma
+        };
+
         let mut eos_token_ids = Vec::new();
-        if let Some(id) = tokenizer.token_to_id("<eos>") {
-            eos_token_ids.push(id);
-        }
-        if let Some(id) = tokenizer.token_to_id("<end_of_turn>") {
-            eos_token_ids.push(id);
+        for tok in ["<eos>", "<end_of_turn>", "<|im_end|>", "<|endoftext|>"] {
+            if let Some(id) = tokenizer.token_to_id(tok) {
+                eos_token_ids.push(id);
+            }
         }
         if eos_token_ids.is_empty() {
             eos_token_ids.push(1);
         }
 
-        Ok(Self { tokenizer, bos_token_id, eos_token_ids })
+        Ok(Self {
+            tokenizer,
+            bos_token_id,
+            eos_token_ids,
+            template,
+        })
     }
 
     pub fn encode(&self, text: &str) -> Result<Vec<u32>> {
-        let encoding = self.tokenizer
+        let encoding = self
+            .tokenizer
             .encode(text, true)
             .map_err(|e| VibeError::Inference(format!("tokenization failed: {e}")))?;
         Ok(encoding.get_ids().to_vec())
@@ -51,23 +71,48 @@ impl TokenizerWrapper {
         self.bos_token_id
     }
 
-    /// Apply Gemma 4 chat template.
-    /// Format: <start_of_turn>user\n{msg}<end_of_turn>\n<start_of_turn>model\n
+    /// Apply the chat template inferred from the tokenizer vocab
+    /// (ChatML for Qwen, `<start_of_turn>` for Gemma).
     pub fn apply_chat_template(&self, messages: &[Message]) -> String {
-        let mut prompt = String::new();
-        for msg in messages {
-            let role_str = match msg.role {
-                Role::System => "user",
-                Role::User => "user",
-                Role::Assistant => "model",
-            };
-            prompt.push_str("<start_of_turn>");
-            prompt.push_str(role_str);
-            prompt.push('\n');
-            prompt.push_str(&msg.content);
-            prompt.push_str("<end_of_turn>\n");
+        match self.template {
+            TemplateKind::ChatMl => chatml_template(messages),
+            TemplateKind::Gemma => gemma_template(messages),
         }
-        prompt.push_str("<start_of_turn>model\n");
-        prompt
     }
+}
+
+fn chatml_template(messages: &[Message]) -> String {
+    let mut prompt = String::new();
+    for msg in messages {
+        let role_str = match msg.role {
+            Role::System => "system",
+            Role::User => "user",
+            Role::Assistant => "assistant",
+        };
+        prompt.push_str("<|im_start|>");
+        prompt.push_str(role_str);
+        prompt.push('\n');
+        prompt.push_str(&msg.content);
+        prompt.push_str("<|im_end|>\n");
+    }
+    prompt.push_str("<|im_start|>assistant\n");
+    prompt
+}
+
+fn gemma_template(messages: &[Message]) -> String {
+    let mut prompt = String::new();
+    for msg in messages {
+        let role_str = match msg.role {
+            Role::System => "user",
+            Role::User => "user",
+            Role::Assistant => "model",
+        };
+        prompt.push_str("<start_of_turn>");
+        prompt.push_str(role_str);
+        prompt.push('\n');
+        prompt.push_str(&msg.content);
+        prompt.push_str("<end_of_turn>\n");
+    }
+    prompt.push_str("<start_of_turn>model\n");
+    prompt
 }
