@@ -15,7 +15,6 @@ use tracing::info;
 pub struct QuantizedModel {
     inner: ModelInner,
     device: Device,
-    model_path: std::path::PathBuf,
 }
 
 enum ModelInner {
@@ -58,7 +57,7 @@ impl QuantizedModel {
                     .map_err(|e| VibeError::Inference(format!("failed to load Qwen2 weights: {e}")))?;
                 ModelInner::Qwen2(weights)
             }
-            "llama" | "gemma" | "gemma2" | "gemma3" | "gemma4" | _ => {
+            _ => {
                 info!("using LLaMA quantized backend for architecture '{arch}'");
                 let weights = LlamaWeights::from_gguf(content, &mut file, device)
                     .map_err(|e| VibeError::Inference(format!("failed to load LLaMA weights: {e}")))?;
@@ -71,7 +70,6 @@ impl QuantizedModel {
         Ok(Self {
             inner,
             device: device.clone(),
-            model_path: model_path.to_path_buf(),
         })
     }
 

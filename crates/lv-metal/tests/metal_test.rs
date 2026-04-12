@@ -99,6 +99,7 @@ async fn test_metal_backend_inference() {
         temperature: 0.1,
         max_tokens: 10,
         stream: true,
+        session_id: None,
     };
 
     let mut stream = backend.complete(req).await.expect("complete failed");
@@ -145,7 +146,7 @@ async fn bench_metal_throughput() {
     // Warmup
     let warmup_req = CompletionRequest {
         messages: vec![Message { role: Role::User, content: "Hi".to_string() }],
-        temperature: 0.7, max_tokens: 5, stream: true,
+        temperature: 0.7, max_tokens: 5, stream: true, session_id: None,
     };
     let mut stream = backend.complete(warmup_req).await.unwrap();
     while let Some(chunk) = stream.next().await {
@@ -161,6 +162,7 @@ async fn bench_metal_throughput() {
         temperature: 0.7,
         max_tokens: 100,
         stream: true,
+        session_id: None,
     };
 
     let gen_start = Instant::now();

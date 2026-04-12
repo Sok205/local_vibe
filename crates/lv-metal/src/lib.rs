@@ -16,10 +16,12 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::info;
+use uuid::Uuid;
 
 struct MetalInner {
     model: QuantizedModel,
     tokenizer: TokenizerWrapper,
+    last_session_id: Option<Uuid>,
 }
 
 pub struct MetalBackend {
@@ -62,7 +64,7 @@ impl MetalBackend {
         info!("MetalBackend loaded: {}", model_name);
 
         Ok(Self {
-            inner: Arc::new(Mutex::new(MetalInner { model, tokenizer })),
+            inner: Arc::new(Mutex::new(MetalInner { model, tokenizer, last_session_id: None })),
             model_name,
             tier,
         })
@@ -85,6 +87,7 @@ impl InferenceBackend for MetalBackend {
 
         let max_tokens = req.max_tokens;
         let temperature = req.temperature as f64;
+        let session = req.session_id;
 
         let (tx, rx) = mpsc::channel::<Result<CompletionChunk>>(32);
 
@@ -99,8 +102,14 @@ impl InferenceBackend for MetalBackend {
                 }
             };
 
-            // Clear KV cache for fresh generation
-            guard.model.clear_kv_cache();
+            let should_clear = match (guard.last_session_id, session) {
+                (Some(prev), Some(curr)) if prev == curr => false, // same session: keep KV warm
+                _ => true,                                         // new/unsessioned: clear
+            };
+            if should_clear {
+                guard.model.clear_kv_cache();
+            }
+            guard.last_session_id = session;
 
             // Prefill: run forward on full prompt
             let prompt_len = input_ids.len();

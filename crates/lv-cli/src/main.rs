@@ -91,6 +91,7 @@ fn run_models(config: &Config) -> anyhow::Result<()> {
 
 async fn run_interactive(config: Config) -> anyhow::Result<()> {
     let ctx = Arc::new(AppContext::new(config));
+    let session_id = uuid::Uuid::new_v4();
 
     let (event_tx, event_rx) = mpsc::channel::<AppEvent>(128);
     let (command_tx, mut command_rx) = mpsc::channel::<AppCommand>(32);
@@ -102,7 +103,7 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
         while let Some(cmd) = command_rx.recv().await {
             match cmd {
                 AppCommand::Ask { query } => {
-                    handle_ask(&query, &handler_ctx, &handler_event_tx).await;
+                    handle_ask(&query, session_id, &handler_ctx, &handler_event_tx).await;
                 }
                 AppCommand::Index { path: _ } => {
                     let _ = handler_event_tx
@@ -171,6 +172,7 @@ async fn run_ask(config: Config, question: &str) -> anyhow::Result<()> {
             Message { role: Role::System, content: system_msg },
             Message { role: Role::User, content: question.to_string() },
         ],
+        session_id: Some(uuid::Uuid::new_v4()),
         ..Default::default()
     };
 
@@ -201,6 +203,7 @@ async fn run_ask(config: Config, question: &str) -> anyhow::Result<()> {
 
 async fn handle_ask(
     query: &str,
+    session_id: uuid::Uuid,
     ctx: &Arc<AppContext>,
     event_tx: &mpsc::Sender<AppEvent>,
 ) {
@@ -269,6 +272,7 @@ async fn handle_ask(
             Message { role: Role::System, content: system_msg },
             Message { role: Role::User, content: query.to_string() },
         ],
+        session_id: Some(session_id),
         ..Default::default()
     };
 

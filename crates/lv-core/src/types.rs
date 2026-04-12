@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::pin::Pin;
 use futures::Stream;
+use uuid::Uuid;
 
 // --- Inference types ---
 
@@ -25,6 +26,9 @@ pub struct CompletionRequest {
     pub temperature: f32,
     pub max_tokens: u32,
     pub stream: bool,
+    /// Optional session identifier. Backends may keep the KV cache warm across
+    /// calls sharing the same `session_id` and clear it when it changes.
+    pub session_id: Option<Uuid>,
 }
 
 impl Default for CompletionRequest {
@@ -34,6 +38,7 @@ impl Default for CompletionRequest {
             temperature: 0.7,
             max_tokens: 4096,
             stream: true,
+            session_id: None,
         }
     }
 }
