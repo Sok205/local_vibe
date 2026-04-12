@@ -50,6 +50,8 @@ pub struct CloudConfig {
 pub struct RagConfig {
     #[serde(default = "default_db_dir")]
     pub db_dir: PathBuf,
+    #[serde(default)]
+    pub db_root: Option<PathBuf>,
     #[serde(default = "default_chunk_size")]
     pub chunk_size: usize,
     #[serde(default = "default_code_chunk_strategy")]
@@ -116,6 +118,7 @@ impl Default for RagConfig {
     fn default() -> Self {
         Self {
             db_dir: default_db_dir(),
+            db_root: None,
             chunk_size: default_chunk_size(),
             code_chunk_strategy: default_code_chunk_strategy(),
             retrieval_limit: default_retrieval_limit(),
@@ -155,5 +158,29 @@ impl Config {
             }
         }
         Self::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rag_config_parses_db_root() {
+        let toml_src = r#"
+            [rag]
+            db_root = "/tmp/xyz/dbs"
+        "#;
+        let cfg: Config = toml::from_str(toml_src).unwrap();
+        assert_eq!(
+            cfg.rag.db_root.as_deref(),
+            Some(std::path::Path::new("/tmp/xyz/dbs"))
+        );
+    }
+
+    #[test]
+    fn rag_config_db_root_defaults_to_none() {
+        let cfg = Config::default();
+        assert!(cfg.rag.db_root.is_none());
     }
 }
