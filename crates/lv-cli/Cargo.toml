@@ -11,7 +11,6 @@ path = "src/main.rs"
 lv-core = { path = "../lv-core" }
 lv-inference = { path = "../lv-inference" }
 lv-rag = { path = "../lv-rag" }
-lv-router = { path = "../lv-router" }
 lv-mcp = { path = "../lv-mcp" }
 lv-metal = { path = "../lv-metal" }
 lv-tui = { path = "../lv-tui" }

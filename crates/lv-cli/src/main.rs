@@ -3,20 +3,18 @@ use std::sync::Arc;
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::mpsc;
 
-use lv_core::traits::{CodeGraph, InferenceBackend};
+use lv_core::traits::CodeGraph;
 use lv_core::types::{
-    CompletionRequest, Message, ModelTier, Role, SearchFilter,
+    CompletionRequest, Message, Role, SearchFilter, SearchResult,
 };
 use lv_core::Config;
-use lv_inference::mlx_lm::MlxLmBackend;
-use lv_metal::MetalBackend;
-use lv_rag::code_graph::TreeSitterGraph;
 use lv_rag::query::QueryEngine;
-use lv_rag::store::LanceStore;
-use lv_router::EscalatingRouter;
 use lv_tui::{run_tui, AppCommand, AppEvent};
+
+mod app_context;
+use app_context::AppContext;
 
 #[derive(Parser)]
 #[command(name = "local-vibe", about = "Local AI coding assistant", version)]
@@ -83,7 +81,10 @@ fn run_models(config: &Config) -> anyhow::Result<()> {
     println!("  fast:      {} ({})", config.models.fast.name, config.models.fast.backend);
     println!("  medium:    {} ({})", config.models.medium.name, config.models.medium.backend);
     println!("  strong:    {} ({})", config.models.strong.name, config.models.strong.backend);
-    println!("  embedding: {} ({})", config.models.embedding.name, config.models.embedding.backend);
+    match &config.models.embedding {
+        Some(m) => println!("  embedding: {} ({})", m.name, m.backend),
+        None => println!("  embedding: (not configured — RAG disabled)"),
+    }
     if let Some(ref cloud) = config.models.cloud {
         println!("  cloud:     {} ({})", cloud.model, cloud.provider);
     } else {
@@ -92,76 +93,20 @@ fn run_models(config: &Config) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn setup(config: &Config) -> anyhow::Result<(Arc<EscalatingRouter>, Arc<QueryEngine>, Arc<RwLock<TreeSitterGraph>>)> {
-    use lv_core::traits::EmbeddingBackend;
-
-    let backend: Arc<dyn InferenceBackend> = match config.models.medium.backend.as_str() {
-        "metal" => {
-            let model_path = config.models.medium.model_path.as_ref()
-                .ok_or_else(|| anyhow::anyhow!("model_path required for metal backend"))?;
-            let tokenizer_path = config.models.medium.tokenizer_path.as_ref()
-                .ok_or_else(|| anyhow::anyhow!("tokenizer_path required for metal backend"))?;
-            Arc::new(MetalBackend::load(model_path, tokenizer_path, ModelTier::Medium)?)
-        }
-        _ => {
-            Arc::new(MlxLmBackend::connect(&config.models.medium.name, 8080, ModelTier::Medium))
-        }
-    };
-
-    // Use embedding model for RAG (Phase 2 decouples this)
-    let embedding_backend: Arc<dyn EmbeddingBackend> =
-        Arc::new(MlxLmBackend::connect(&config.models.embedding.name, 8080, ModelTier::Fast));
-
-    let router = Arc::new(
-        EscalatingRouter::new()
-            .add_tier(ModelTier::Medium, backend.clone()),
-    );
-
-    // Probe embedding dimension (stubbed — Phase 2 replaces this with a real
-    // EmbeddingBackend::dim() call once setup() is rewritten into AppContext)
-    let dim: usize = 768;
-
-    let db_path = config.rag.db_dir.to_string_lossy().to_string();
-    let store = Arc::new(
-        LanceStore::new(&db_path, dim)
-            .await
-            .context("Failed to create LanceStore")?,
-    );
-
-    let query_engine = Arc::new(QueryEngine::new(embedding_backend.clone(), store));
-
-    let code_graph = Arc::new(RwLock::new(
-        TreeSitterGraph::new(&config.code_graph.languages),
-    ));
-
-    Ok((router, query_engine, code_graph))
-}
-
 async fn run_interactive(config: Config) -> anyhow::Result<()> {
-    let (router, query_engine, code_graph) = setup(&config).await?;
+    let ctx = Arc::new(AppContext::new(config));
 
     let (event_tx, event_rx) = mpsc::channel::<AppEvent>(128);
     let (command_tx, mut command_rx) = mpsc::channel::<AppCommand>(32);
 
-    let handler_router = router.clone();
-    let handler_query_engine = query_engine.clone();
-    let handler_code_graph = code_graph.clone();
-    let handler_config = config.clone();
+    let handler_ctx = ctx.clone();
     let handler_event_tx = event_tx.clone();
 
     tokio::spawn(async move {
         while let Some(cmd) = command_rx.recv().await {
             match cmd {
                 AppCommand::Ask { query } => {
-                    handle_ask(
-                        &query,
-                        &handler_router,
-                        &handler_query_engine,
-                        &handler_code_graph,
-                        &handler_config,
-                        &handler_event_tx,
-                    )
-                    .await;
+                    handle_ask(&query, &handler_ctx, &handler_event_tx).await;
                 }
                 AppCommand::Index { path: _ } => {
                     let _ = handler_event_tx
@@ -178,25 +123,38 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
 }
 
 async fn run_ask(config: Config, question: &str) -> anyhow::Result<()> {
-    let (router, query_engine, code_graph) = setup(&config).await?;
+    let ctx = AppContext::new(config);
 
-    // Search for context
-    let filter = SearchFilter::default();
-    let results = query_engine
-        .search(question, config.rag.retrieval_limit, config.rag.retrieval_threshold, &filter)
-        .await
-        .unwrap_or_default();
+    let (search_results, repo_map) = match ctx.embedding().await? {
+        Some(embedder) => {
+            let store = ctx.store().await?;
+            let query_engine = QueryEngine::new(embedder, store);
+            let filter = SearchFilter::default();
+            let results = query_engine
+                .search(
+                    question,
+                    ctx.config.rag.retrieval_limit,
+                    ctx.config.rag.retrieval_threshold,
+                    &filter,
+                )
+                .await
+                .unwrap_or_default();
+            let cwd = std::env::current_dir().unwrap_or_default();
+            let graph = ctx.code_graph().await;
+            let map = graph.read().await.repo_map(&cwd);
+            (results, map)
+        }
+        None => (Vec::<SearchResult>::new(), String::new()),
+    };
 
-    // Get repo map
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let repo_map = code_graph.read().await.repo_map(&cwd);
-
-    // Build context
     let mut context = String::new();
-    if !results.is_empty() {
+    if !search_results.is_empty() {
         context.push_str("## Relevant code:\n");
-        for r in &results {
-            context.push_str(&format!("# {} (score: {:.3})\n{}\n\n", r.file_path, r.score, r.text));
+        for r in &search_results {
+            context.push_str(&format!(
+                "# {} (score: {:.3})\n{}\n\n",
+                r.file_path, r.score, r.text
+            ));
         }
     }
     if !repo_map.is_empty() {
@@ -220,20 +178,20 @@ async fn run_ask(config: Config, question: &str) -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    let (_tier, mut stream) = router
-        .complete_at(ModelTier::Medium, req)
-        .await
-        .context("Completion failed")?;
+    let backend = ctx.inference().await?;
+    let mut stream = backend.complete(req).await.context("Completion failed")?;
 
     use std::io::Write;
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-
     while let Some(chunk) = stream.next().await {
         match chunk {
             Ok(c) => {
                 write!(out, "{}", c.delta)?;
                 out.flush()?;
+                if c.finished {
+                    break;
+                }
             }
             Err(e) => {
                 eprintln!("\nError: {e}");
@@ -242,36 +200,59 @@ async fn run_ask(config: Config, question: &str) -> anyhow::Result<()> {
         }
     }
     writeln!(out)?;
-
     Ok(())
 }
 
 async fn handle_ask(
     query: &str,
-    router: &Arc<EscalatingRouter>,
-    query_engine: &Arc<QueryEngine>,
-    code_graph: &Arc<RwLock<TreeSitterGraph>>,
-    config: &Config,
+    ctx: &Arc<AppContext>,
     event_tx: &mpsc::Sender<AppEvent>,
 ) {
     let filter = SearchFilter::default();
-    let results = query_engine
-        .search(query, config.rag.retrieval_limit, config.rag.retrieval_threshold, &filter)
-        .await
-        .unwrap_or_default();
+
+    let (results, repo_map) = match ctx.embedding().await {
+        Ok(Some(embedder)) => match ctx.store().await {
+            Ok(store) => {
+                let qe = QueryEngine::new(embedder, store);
+                let r = qe
+                    .search(
+                        query,
+                        ctx.config.rag.retrieval_limit,
+                        ctx.config.rag.retrieval_threshold,
+                        &filter,
+                    )
+                    .await
+                    .unwrap_or_default();
+                let cwd = std::env::current_dir().unwrap_or_default();
+                let graph = ctx.code_graph().await;
+                let map = graph.read().await.repo_map(&cwd);
+                (r, map)
+            }
+            Err(e) => {
+                let _ = event_tx.send(AppEvent::Error(format!("store error: {e}"))).await;
+                (Vec::new(), String::new())
+            }
+        },
+        Ok(None) => (Vec::new(), String::new()),
+        Err(e) => {
+            let _ = event_tx
+                .send(AppEvent::Error(format!("embedding error: {e}")))
+                .await;
+            (Vec::new(), String::new())
+        }
+    };
 
     let _ = event_tx.send(AppEvent::SearchResults(results.clone())).await;
-
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let repo_map = code_graph.read().await.repo_map(&cwd);
     let _ = event_tx.send(AppEvent::RepoMap(repo_map.clone())).await;
 
-    // Build context
     let mut context = String::new();
     if !results.is_empty() {
         context.push_str("## Relevant code:\n");
         for r in &results {
-            context.push_str(&format!("# {} (score: {:.3})\n{}\n\n", r.file_path, r.score, r.text));
+            context.push_str(&format!(
+                "# {} (score: {:.3})\n{}\n\n",
+                r.file_path, r.score, r.text
+            ));
         }
     }
     if !repo_map.is_empty() {
@@ -295,9 +276,16 @@ async fn handle_ask(
         ..Default::default()
     };
 
-    let stream_result = router.complete_at(ModelTier::Medium, req).await;
-    match stream_result {
-        Ok((_tier, mut stream)) => {
+    let backend = match ctx.inference().await {
+        Ok(b) => b,
+        Err(e) => {
+            let _ = event_tx.send(AppEvent::Error(e.to_string())).await;
+            return;
+        }
+    };
+
+    match backend.complete(req).await {
+        Ok(mut stream) => {
             while let Some(chunk) = stream.next().await {
                 match chunk {
                     Ok(c) => {

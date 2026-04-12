@@ -23,8 +23,8 @@ pub struct ModelsConfig {
     pub medium: ModelConfig,
     #[serde(default = "default_strong_model")]
     pub strong: ModelConfig,
-    #[serde(default = "default_embedding_model")]
-    pub embedding: ModelConfig,
+    #[serde(default)]
+    pub embedding: Option<ModelConfig>,
     pub cloud: Option<CloudConfig>,
 }
 
@@ -87,9 +87,6 @@ fn default_medium_model() -> ModelConfig {
 fn default_strong_model() -> ModelConfig {
     ModelConfig { name: "gemma-4-31b-it".into(), backend: "mlx-lm".into(), quantization: "4bit".into(), model_path: None, tokenizer_path: None }
 }
-fn default_embedding_model() -> ModelConfig {
-    ModelConfig { name: "nomic-embed-text".into(), backend: "mlx-lm".into(), quantization: "fp16".into(), model_path: None, tokenizer_path: None }
-}
 fn default_backend() -> String { "mlx-lm".into() }
 fn default_quantization() -> String { "4bit".into() }
 fn default_db_dir() -> PathBuf {
@@ -109,7 +106,7 @@ impl Default for ModelsConfig {
             fast: default_fast_model(),
             medium: default_medium_model(),
             strong: default_strong_model(),
-            embedding: default_embedding_model(),
+            embedding: None,
             cloud: None,
         }
     }

@@ -86,14 +86,7 @@ fn test_config_default() {
     assert_eq!(config.models.fast.name, "gemma-4-e2b-it");
     assert_eq!(config.models.medium.name, "gemma-4-26b-a4b-it");
     assert_eq!(config.models.strong.name, "gemma-4-31b-it");
-    assert_eq!(config.models.embedding.name, "nomic-embed-text");
-}
-
-#[test]
-fn test_router_empty() {
-    let router = lv_router::EscalatingRouter::new();
-    assert!(router.backend_at(ModelTier::Fast).is_none());
-    assert!(router.list_models().is_empty());
+    assert!(config.models.embedding.is_none(), "embedding disabled by default");
 }
 
 // --- Tests requiring mlx-lm server ---
