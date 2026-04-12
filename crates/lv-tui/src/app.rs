@@ -33,12 +33,20 @@ pub enum AppEvent {
     ModelChanged(ModelTier, String),
     StoreStats(StoreStats),
     Error(String),
+    IndexProgress { done: usize, total: usize, current: String },
+    IndexDone { indexed: usize, skipped: usize, failed: usize },
 }
 
 pub enum AppCommand {
     Ask { query: String },
     Index { path: String },
     Quit,
+}
+
+pub struct IndexingProgress {
+    pub done: usize,
+    pub total: usize,
+    pub current: String,
 }
 
 struct AppState {
@@ -48,6 +56,7 @@ struct AppState {
     model_tier: ModelTier,
     model_name: String,
     store_stats: Option<StoreStats>,
+    indexing: Option<IndexingProgress>,
 }
 
 impl AppState {
@@ -59,6 +68,7 @@ impl AppState {
             model_tier: ModelTier::Fast,
             model_name: "unknown".to_string(),
             store_stats: None,
+            indexing: None,
         }
     }
 }
@@ -200,6 +210,16 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
             state.chat.push_message(Message {
                 role: Role::System,
                 content: format!("Error: {msg}"),
+            });
+        }
+        AppEvent::IndexProgress { done, total, current } => {
+            state.indexing = Some(IndexingProgress { done, total, current });
+        }
+        AppEvent::IndexDone { indexed, skipped, failed } => {
+            state.indexing = None;
+            state.chat.push_message(Message {
+                role: Role::System,
+                content: format!("Indexed {indexed}, skipped {skipped}, failed {failed}."),
             });
         }
     }
