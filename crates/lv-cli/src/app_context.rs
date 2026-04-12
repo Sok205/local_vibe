@@ -124,10 +124,15 @@ async fn build_embedding(
         return Ok(None);
     };
     let backend: Arc<dyn EmbeddingBackend> = match m.backend.as_str() {
+        "fastembed" | "" => {
+            let fb = lv_inference::fastembed_backend::FastEmbedBackend::new(&m.name)
+                .map_err(|e| anyhow::anyhow!("fastembed init: {e}"))?;
+            Arc::new(fb)
+        }
         "mlx-lm" | "mlx" => Arc::new(MlxLmBackend::connect(&m.name, 8081, ModelTier::Fast)),
         other => anyhow::bail!(
-            "embedding backend '{other}' is not supported; use 'mlx-lm' or omit \
-             [models.embedding] to disable RAG"
+            "embedding backend '{other}' is not supported; use 'fastembed' \
+             or 'mlx-lm', or omit [models.embedding] to disable RAG"
         ),
     };
     Ok(Some(backend))
