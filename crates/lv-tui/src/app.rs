@@ -35,12 +35,47 @@ pub enum AppEvent {
     Error(String),
     IndexProgress { done: usize, total: usize, current: String },
     IndexDone { indexed: usize, skipped: usize, failed: usize },
+    DbListing(Vec<String>),
+    DbSwitched(String),
 }
 
 pub enum AppCommand {
     Ask { query: String },
-    Index { path: String },
+    Index { path: String, db: Option<String> },
+    ListDbs,
+    SwitchDb(String),
     Quit,
+}
+
+/// Parse one submitted input line into an `AppCommand`.
+///
+/// Slash commands:
+/// - `/quit`                — `Quit`
+/// - `/dbs`                 — `ListDbs`
+/// - `/db <name>`           — `SwitchDb`
+/// - `/index <path> [name]` — `Index { path, db }`
+///
+/// Anything else becomes `Ask`.
+pub fn parse_input(line: &str) -> AppCommand {
+    let trimmed = line.trim();
+    if trimmed == "/quit" {
+        return AppCommand::Quit;
+    }
+    if trimmed == "/dbs" {
+        return AppCommand::ListDbs;
+    }
+    if let Some(rest) = trimmed.strip_prefix("/db ") {
+        return AppCommand::SwitchDb(rest.trim().to_string());
+    }
+    if let Some(rest) = trimmed.strip_prefix("/index ") {
+        let mut parts = rest.split_whitespace();
+        let path = parts.next().unwrap_or("").to_string();
+        let db = parts.next().map(|s| s.to_string());
+        return AppCommand::Index { path, db };
+    }
+    AppCommand::Ask {
+        query: line.to_string(),
+    }
 }
 
 pub struct IndexingProgress {
@@ -57,6 +92,7 @@ struct AppState {
     model_name: String,
     store_stats: Option<StoreStats>,
     indexing: Option<IndexingProgress>,
+    current_db: String,
 }
 
 impl AppState {
@@ -69,6 +105,7 @@ impl AppState {
             model_name: "unknown".to_string(),
             store_stats: None,
             indexing: None,
+            current_db: "default".to_string(),
         }
     }
 }
@@ -150,21 +187,21 @@ pub async fn run_tui(
                     break;
                 }
                 InputAction::Submit(text) => {
-                    if text.trim() == "/quit" {
-                        let _ = command_tx.send(AppCommand::Quit).await;
-                        break;
+                    let cmd = parse_input(&text);
+                    match &cmd {
+                        AppCommand::Quit => {
+                            let _ = command_tx.send(AppCommand::Quit).await;
+                            break;
+                        }
+                        AppCommand::Ask { query } => {
+                            state.chat.push_message(Message {
+                                role: Role::User,
+                                content: query.clone(),
+                            });
+                        }
+                        _ => {}
                     }
-                    if let Some(path) = text.trim().strip_prefix("/index ") {
-                        let _ = command_tx
-                            .send(AppCommand::Index { path: path.to_string() })
-                            .await;
-                    } else {
-                        state.chat.push_message(Message {
-                            role: Role::User,
-                            content: text.clone(),
-                        });
-                        let _ = command_tx.send(AppCommand::Ask { query: text }).await;
-                    }
+                    let _ = command_tx.send(cmd).await;
                 }
                 InputAction::ScrollUp => state.chat.scroll_up(),
                 InputAction::ScrollDown => state.chat.scroll_down(),
@@ -221,6 +258,78 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
                 role: Role::System,
                 content: format!("Indexed {indexed}, skipped {skipped}, failed {failed}."),
             });
+        }
+        AppEvent::DbListing(names) => {
+            let list = if names.is_empty() {
+                "(no DBs — index one with `/index <path> <name>`)".to_string()
+            } else {
+                names.join(", ")
+            };
+            state.chat.push_message(Message {
+                role: Role::System,
+                content: format!("DBs: {list}"),
+            });
+        }
+        AppEvent::DbSwitched(name) => {
+            state.current_db = name.clone();
+            state.chat.push_message(Message {
+                role: Role::System,
+                content: format!("Switched to DB '{name}'."),
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_quit() {
+        assert!(matches!(parse_input("/quit"), AppCommand::Quit));
+        assert!(matches!(parse_input("  /quit  "), AppCommand::Quit));
+    }
+
+    #[test]
+    fn parse_dbs() {
+        assert!(matches!(parse_input("/dbs"), AppCommand::ListDbs));
+    }
+
+    #[test]
+    fn parse_db_switch() {
+        match parse_input("/db code") {
+            AppCommand::SwitchDb(name) => assert_eq!(name, "code"),
+            _ => panic!("expected SwitchDb"),
+        }
+    }
+
+    #[test]
+    fn parse_index_without_db() {
+        match parse_input("/index /tmp/foo") {
+            AppCommand::Index { path, db } => {
+                assert_eq!(path, "/tmp/foo");
+                assert!(db.is_none());
+            }
+            _ => panic!("expected Index"),
+        }
+    }
+
+    #[test]
+    fn parse_index_with_db() {
+        match parse_input("/index /tmp/foo code") {
+            AppCommand::Index { path, db } => {
+                assert_eq!(path, "/tmp/foo");
+                assert_eq!(db.as_deref(), Some("code"));
+            }
+            _ => panic!("expected Index"),
+        }
+    }
+
+    #[test]
+    fn parse_plain_question_becomes_ask() {
+        match parse_input("what is this?") {
+            AppCommand::Ask { query } => assert_eq!(query, "what is this?"),
+            _ => panic!("expected Ask"),
         }
     }
 }

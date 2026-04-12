@@ -105,10 +105,24 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
                 AppCommand::Ask { query } => {
                     handle_ask(&query, session_id, &handler_ctx, &handler_event_tx).await;
                 }
-                AppCommand::Index { path: _ } => {
+                AppCommand::Index { path: _, db: _ } => {
                     let _ = handler_event_tx
                         .send(AppEvent::Error("Indexing not yet wired".to_string()))
                         .await;
+                }
+                AppCommand::ListDbs => {
+                    let names = handler_ctx.list_dbs().await.unwrap_or_default();
+                    let _ = handler_event_tx.send(AppEvent::DbListing(names)).await;
+                }
+                AppCommand::SwitchDb(name) => {
+                    match handler_ctx.set_current_db(&name).await {
+                        Ok(()) => {
+                            let _ = handler_event_tx.send(AppEvent::DbSwitched(name)).await;
+                        }
+                        Err(e) => {
+                            let _ = handler_event_tx.send(AppEvent::Error(e.to_string())).await;
+                        }
+                    }
                 }
                 AppCommand::Quit => break,
             }
