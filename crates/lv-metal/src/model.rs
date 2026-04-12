@@ -84,14 +84,11 @@ impl QuantizedModel {
         .map_err(|e| VibeError::Inference(format!("forward pass failed: {e}")))
     }
 
-    /// Clear the KV cache by reloading the model weights.
+    /// Clear the KV cache across all layers (fast — no disk I/O).
     pub fn clear_kv_cache(&mut self) {
-        info!("clearing KV cache by reloading model");
-        match Self::load(&self.model_path, &self.device) {
-            Ok(fresh) => self.inner = fresh.inner,
-            Err(e) => {
-                tracing::error!("failed to reload model for cache clear: {e}");
-            }
+        match &mut self.inner {
+            ModelInner::Llama(w) => w.clear_kv_cache(),
+            ModelInner::Qwen2(w) => w.clear_kv_cache(),
         }
     }
 
