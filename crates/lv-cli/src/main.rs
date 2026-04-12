@@ -105,10 +105,8 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
                 AppCommand::Ask { query } => {
                     handle_ask(&query, session_id, &handler_ctx, &handler_event_tx).await;
                 }
-                AppCommand::Index { path: _, db: _ } => {
-                    let _ = handler_event_tx
-                        .send(AppEvent::Error("Indexing not yet wired".to_string()))
-                        .await;
+                AppCommand::Index { path, db } => {
+                    index_with_progress(&handler_ctx, &path, db, &handler_event_tx).await;
                 }
                 AppCommand::ListDbs => {
                     let names = handler_ctx.list_dbs().await.unwrap_or_default();
@@ -322,6 +320,88 @@ async fn handle_ask(
             let _ = event_tx.send(AppEvent::Error(e.to_string())).await;
         }
     }
+}
+
+async fn index_with_progress(
+    ctx: &Arc<AppContext>,
+    path: &str,
+    db_name: Option<String>,
+    event_tx: &mpsc::Sender<AppEvent>,
+) {
+    use lv_rag::chunker::OverlappingChunker;
+    use lv_rag::indexer::IndexManager;
+    use lv_rag::parsers::{epub::EpubParser, html::HtmlParser, pdf::PdfParser, text::TextParser};
+
+    let embedder = match ctx.embedding().await {
+        Ok(Some(e)) => e,
+        Ok(None) => {
+            let _ = event_tx
+                .send(AppEvent::Error("no embedding model configured".into()))
+                .await;
+            return;
+        }
+        Err(e) => {
+            let _ = event_tx
+                .send(AppEvent::Error(format!("embedding: {e}")))
+                .await;
+            return;
+        }
+    };
+    let store = match db_name {
+        Some(ref name) => match ctx.store_named(name).await {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = event_tx.send(AppEvent::Error(format!("store: {e}"))).await;
+                return;
+            }
+        },
+        None => match ctx.store().await {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = event_tx.send(AppEvent::Error(format!("store: {e}"))).await;
+                return;
+            }
+        },
+    };
+
+    let parsers: Vec<Box<dyn lv_core::traits::Parser>> = vec![
+        Box::new(TextParser),
+        Box::new(PdfParser),
+        Box::new(HtmlParser),
+        Box::new(EpubParser),
+    ];
+    let chunker = Box::new(OverlappingChunker::new(200, 40));
+    let manager = IndexManager::new(parsers, chunker, embedder, store, 4);
+
+    let dir = std::path::Path::new(path);
+    let (mut rx, handle, _cancel) = match manager.index(dir).await {
+        Ok(x) => x,
+        Err(e) => {
+            let _ = event_tx
+                .send(AppEvent::Error(format!("index start: {e}")))
+                .await;
+            return;
+        }
+    };
+    while let Some(progress) = rx.recv().await {
+        match progress {
+            lv_core::types::IndexProgress::Indexing { done, total, current } => {
+                let _ = event_tx
+                    .send(AppEvent::IndexProgress { done, total, current })
+                    .await;
+            }
+            lv_core::types::IndexProgress::Complete { indexed, skipped, failed } => {
+                let _ = event_tx
+                    .send(AppEvent::IndexDone { indexed, skipped, failed })
+                    .await;
+            }
+            lv_core::types::IndexProgress::Error(e) => {
+                let _ = event_tx.send(AppEvent::Error(e)).await;
+            }
+            _ => {}
+        }
+    }
+    let _ = handle.await;
 }
 
 async fn run_index(config: Config, path: &str) -> anyhow::Result<()> {
