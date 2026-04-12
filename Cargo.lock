@@ -4088,12 +4088,12 @@ dependencies = [
  "lv-mcp",
  "lv-metal",
  "lv-rag",
- "lv-router",
  "lv-tui",
  "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -4108,6 +4108,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "toml",
+ "uuid",
 ]
 
 [[package]]
@@ -4158,6 +4159,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -4188,17 +4190,6 @@ dependencies = [
  "tree-sitter-rust",
  "tree-sitter-typescript",
  "walkdir",
-]
-
-[[package]]
-name = "lv-router"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "futures",
- "lv-core",
- "tokio",
- "tracing",
 ]
 
 [[package]]
