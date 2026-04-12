@@ -1,3 +1,4 @@
+pub mod fastembed_backend;
 pub mod mlx_lm;
 
 use lv_core::error::VibeError;
