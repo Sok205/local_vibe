@@ -115,3 +115,88 @@ async fn test_metal_backend_inference() {
     assert!(!response.is_empty(), "got empty response");
     println!("Model response: {response}");
 }
+
+#[tokio::test]
+#[ignore]
+async fn bench_metal_throughput() {
+    use lv_core::traits::InferenceBackend;
+    use lv_core::types::*;
+    use lv_metal::MetalBackend;
+    use futures::StreamExt;
+    use std::path::PathBuf;
+    use std::time::Instant;
+
+    let model_path = PathBuf::from(
+        std::env::var("LV_TEST_MODEL_PATH")
+            .expect("set LV_TEST_MODEL_PATH to a GGUF file")
+    );
+    let tokenizer_path = PathBuf::from(
+        std::env::var("LV_TEST_TOKENIZER_PATH")
+            .expect("set LV_TEST_TOKENIZER_PATH to tokenizer.json")
+    );
+
+    let load_start = Instant::now();
+    let backend = MetalBackend::load(&model_path, &tokenizer_path, ModelTier::Medium)
+        .expect("failed to load model");
+    let load_duration = load_start.elapsed();
+    println!("\n=== BENCHMARK ===");
+    println!("Load time: {:.2}s", load_duration.as_secs_f64());
+
+    // Warmup
+    let warmup_req = CompletionRequest {
+        messages: vec![Message { role: Role::User, content: "Hi".to_string() }],
+        temperature: 0.7, max_tokens: 5, stream: true,
+    };
+    let mut stream = backend.complete(warmup_req).await.unwrap();
+    while let Some(chunk) = stream.next().await {
+        if let Ok(c) = chunk { if c.finished { break; } }
+    }
+    println!("Warmup complete");
+
+    // Actual benchmark
+    let req = CompletionRequest {
+        messages: vec![
+            Message { role: Role::User, content: "Write a short paragraph about the Rust programming language.".to_string() },
+        ],
+        temperature: 0.7,
+        max_tokens: 100,
+        stream: true,
+    };
+
+    let gen_start = Instant::now();
+    let mut stream = backend.complete(req).await.expect("complete failed");
+    let mut response = String::new();
+    let mut token_count = 0;
+    let mut first_token_time = None;
+
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(c) if c.finished => break,
+            Ok(c) => {
+                if first_token_time.is_none() {
+                    first_token_time = Some(gen_start.elapsed());
+                }
+                response.push_str(&c.delta);
+                token_count += 1;
+            }
+            Err(e) => panic!("stream error: {e}"),
+        }
+    }
+
+    let total = gen_start.elapsed();
+    let ttft = first_token_time.unwrap_or(total);
+    let gen_time = total - ttft;
+    let tok_per_sec = if gen_time.as_secs_f64() > 0.0 {
+        (token_count - 1) as f64 / gen_time.as_secs_f64()
+    } else {
+        0.0
+    };
+
+    println!("\n=== RESULTS ===");
+    println!("Total time: {:.2}s", total.as_secs_f64());
+    println!("Time to first token: {:.2}s", ttft.as_secs_f64());
+    println!("Tokens generated: {}", token_count);
+    println!("Generation time (excl. TTFT): {:.2}s", gen_time.as_secs_f64());
+    println!("Throughput: {:.1} tok/s", tok_per_sec);
+    println!("\nResponse: {response}");
+}
