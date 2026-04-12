@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Semaphore};
 use tokio_util::sync::CancellationToken;
 
-use lv_core::traits::{Chunker, InferenceBackend, Parser, VectorStore};
+use lv_core::traits::{Chunker, EmbeddingBackend, Parser, VectorStore};
 use lv_core::types::{Document, IndexProgress};
 use lv_core::{Result, VibeError};
 
@@ -14,7 +14,7 @@ use crate::scanner::{scan_directory, ScannedFile};
 pub struct IndexManager {
     parsers: Vec<Box<dyn Parser>>,
     chunker: Box<dyn Chunker>,
-    backend: Arc<dyn InferenceBackend>,
+    embedder: Arc<dyn EmbeddingBackend>,
     store: Arc<dyn VectorStore>,
     concurrency: usize,
 }
@@ -23,14 +23,14 @@ impl IndexManager {
     pub fn new(
         parsers: Vec<Box<dyn Parser>>,
         chunker: Box<dyn Chunker>,
-        backend: Arc<dyn InferenceBackend>,
+        embedder: Arc<dyn EmbeddingBackend>,
         store: Arc<dyn VectorStore>,
         concurrency: usize,
     ) -> Self {
         Self {
             parsers,
             chunker,
-            backend,
+            embedder,
             store,
             concurrency,
         }
@@ -58,7 +58,7 @@ impl IndexManager {
 
         let parsers = Arc::new(self.parsers);
         let chunker: Arc<dyn Chunker> = Arc::from(self.chunker);
-        let backend = self.backend;
+        let embedder = self.embedder;
         let store = self.store;
         let semaphore = Arc::new(Semaphore::new(self.concurrency));
         let total = files.len();
@@ -80,7 +80,7 @@ impl IndexManager {
                 let permit = semaphore.clone().acquire_owned().await.unwrap();
                 let parsers = parsers.clone();
                 let chunker = chunker.clone();
-                let backend = backend.clone();
+                let embedder = embedder.clone();
                 let store = store.clone();
                 let cancel = cancel_clone.clone();
 
@@ -90,7 +90,7 @@ impl IndexManager {
                         return (file, Ok(FileOutcome::Skipped));
                     }
                     let result =
-                        index_single_file(&file, &parsers, &*chunker, &*backend, &*store).await;
+                        index_single_file(&file, &parsers, &*chunker, &*embedder, &*store).await;
                     drop(permit);
                     (file, result)
                 });
@@ -168,7 +168,7 @@ async fn index_single_file(
     file: &ScannedFile,
     parsers: &[Box<dyn Parser>],
     chunker: &dyn Chunker,
-    backend: &dyn InferenceBackend,
+    embedder: &dyn EmbeddingBackend,
     store: &dyn VectorStore,
 ) -> Result<FileOutcome> {
     let file_hash = hasher::hash_file(&file.path)?;
@@ -188,7 +188,7 @@ async fn index_single_file(
     }
 
     let texts: Vec<&str> = chunks.iter().map(|c| c.text.as_str()).collect();
-    let vectors = backend.embed(&texts).await?;
+    let vectors = embedder.embed(&texts).await?;
 
     let file_path_str = file.path.to_string_lossy().into_owned();
     let documents: Vec<Document> = chunks

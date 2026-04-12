@@ -113,7 +113,7 @@ async fn test_mlx_backend_health() {
 #[ignore]
 async fn test_mlx_backend_embed() {
     use lv_inference::mlx_lm::MlxLmBackend;
-    use lv_core::traits::InferenceBackend;
+    use lv_core::traits::EmbeddingBackend;
 
     let backend = MlxLmBackend::connect("nomic-embed-text", 8080, ModelTier::Fast);
     let embeddings = backend.embed(&["test query about rust code"]).await.unwrap();

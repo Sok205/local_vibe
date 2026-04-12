@@ -6,9 +6,15 @@ use std::path::{Path, PathBuf};
 #[async_trait]
 pub trait InferenceBackend: Send + Sync {
     async fn complete(&self, req: CompletionRequest) -> Result<CompletionStream>;
-    async fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>>;
     fn model_info(&self) -> ModelInfo;
     async fn health(&self) -> BackendHealth;
+}
+
+#[async_trait]
+pub trait EmbeddingBackend: Send + Sync {
+    async fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>>;
+    fn dim(&self) -> usize;
+    fn model_name(&self) -> &str;
 }
 
 #[async_trait]

@@ -201,39 +201,6 @@ impl InferenceBackend for MetalBackend {
         Ok(Box::pin(ReceiverStream::new(rx)))
     }
 
-    async fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        let inner = Arc::clone(&self.inner);
-        let texts: Vec<String> = texts.iter().map(|s| s.to_string()).collect();
-
-        tokio::task::spawn_blocking(move || {
-            let mut guard = inner.lock().map_err(|e| VibeError::Inference(format!("lock poisoned: {e}")))?;
-            let device = guard.model.device().clone();
-
-            let mut embeddings = Vec::with_capacity(texts.len());
-            for text in &texts {
-                let tokens = guard.tokenizer.encode(text)?;
-                let input = Tensor::new(tokens.as_slice(), &device)
-                    .and_then(|t| t.unsqueeze(0))
-                    .map_err(|e| VibeError::Inference(format!("tensor creation failed: {e}")))?;
-
-                guard.model.clear_kv_cache();
-                let logits = guard.model.forward(&input, 0)?;
-
-                // Use logits as a rough embedding (mean over vocab dimension)
-                // This is a fallback -- not a real embedding model
-                let embedding: Vec<f32> = logits
-                    .squeeze(0)
-                    .and_then(|t| t.to_vec1::<f32>())
-                    .map_err(|e| VibeError::Inference(format!("embedding extraction failed: {e}")))?;
-
-                embeddings.push(embedding);
-            }
-            Ok(embeddings)
-        })
-        .await
-        .map_err(|e| VibeError::Inference(format!("spawn_blocking join failed: {e}")))?
-    }
-
     fn model_info(&self) -> ModelInfo {
         ModelInfo {
             name: self.model_name.clone(),

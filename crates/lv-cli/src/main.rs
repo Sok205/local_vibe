@@ -93,6 +93,8 @@ fn run_models(config: &Config) -> anyhow::Result<()> {
 }
 
 async fn setup(config: &Config) -> anyhow::Result<(Arc<EscalatingRouter>, Arc<QueryEngine>, Arc<RwLock<TreeSitterGraph>>)> {
+    use lv_core::traits::EmbeddingBackend;
+
     let backend: Arc<dyn InferenceBackend> = match config.models.medium.backend.as_str() {
         "metal" => {
             let model_path = config.models.medium.model_path.as_ref()
@@ -106,16 +108,18 @@ async fn setup(config: &Config) -> anyhow::Result<(Arc<EscalatingRouter>, Arc<Qu
         }
     };
 
+    // Use embedding model for RAG (Phase 2 decouples this)
+    let embedding_backend: Arc<dyn EmbeddingBackend> =
+        Arc::new(MlxLmBackend::connect(&config.models.embedding.name, 8080, ModelTier::Fast));
+
     let router = Arc::new(
         EscalatingRouter::new()
             .add_tier(ModelTier::Medium, backend.clone()),
     );
 
-    // Probe embedding dimension
-    let dim: usize = match backend.embed(&["test"]).await {
-        Ok(vecs) if !vecs.is_empty() => vecs[0].len(),
-        _ => 768, // fallback default
-    };
+    // Probe embedding dimension (stubbed — Phase 2 replaces this with a real
+    // EmbeddingBackend::dim() call once setup() is rewritten into AppContext)
+    let dim: usize = 768;
 
     let db_path = config.rag.db_dir.to_string_lossy().to_string();
     let store = Arc::new(
@@ -124,7 +128,7 @@ async fn setup(config: &Config) -> anyhow::Result<(Arc<EscalatingRouter>, Arc<Qu
             .context("Failed to create LanceStore")?,
     );
 
-    let query_engine = Arc::new(QueryEngine::new(backend.clone(), store));
+    let query_engine = Arc::new(QueryEngine::new(embedding_backend.clone(), store));
 
     let code_graph = Arc::new(RwLock::new(
         TreeSitterGraph::new(&config.code_graph.languages),

@@ -11,6 +11,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use tokio::process::Child;
 use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
@@ -22,6 +23,7 @@ pub struct MlxLmBackend {
     client: Client,
     process: Arc<RwLock<Option<Child>>>,
     tier: ModelTier,
+    embed_dim: OnceLock<usize>,
 }
 
 impl MlxLmBackend {
@@ -34,6 +36,7 @@ impl MlxLmBackend {
             client: Client::new(),
             process: Arc::new(RwLock::new(Some(child))),
             tier,
+            embed_dim: OnceLock::new(),
         };
         backend.wait_for_ready().await?;
         Ok(backend)
@@ -46,6 +49,7 @@ impl MlxLmBackend {
             client: Client::new(),
             process: Arc::new(RwLock::new(None)),
             tier,
+            embed_dim: OnceLock::new(),
         }
     }
 
@@ -239,37 +243,6 @@ impl InferenceBackend for MlxLmBackend {
         Ok(Box::pin(ReceiverStream::new(rx)))
     }
 
-    async fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        let body = json!({
-            "model": self.model_name,
-            "input": texts,
-        });
-
-        let url = format!("{}/v1/embeddings", self.base_url());
-        let response = self
-            .client
-            .post(&url)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| VibeError::Embedding(format!("HTTP request failed: {e}")))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(VibeError::Embedding(format!(
-                "server returned {status}: {text}"
-            )));
-        }
-
-        let resp: EmbeddingResponse = response
-            .json()
-            .await
-            .map_err(|e| VibeError::Embedding(format!("failed to parse response: {e}")))?;
-
-        Ok(resp.data.into_iter().map(|d| d.embedding).collect())
-    }
-
     fn model_info(&self) -> ModelInfo {
         ModelInfo {
             name: self.model_name.clone(),
@@ -289,5 +262,44 @@ impl InferenceBackend for MlxLmBackend {
                 model_loaded: None,
             },
         }
+    }
+}
+
+#[async_trait]
+impl lv_core::traits::EmbeddingBackend for MlxLmBackend {
+    async fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        let body = json!({ "model": self.model_name, "input": texts });
+        let url = format!("{}/v1/embeddings", self.base_url());
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| VibeError::Embedding(format!("HTTP request failed: {e}")))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(VibeError::Embedding(format!(
+                "server returned {status}: {text}"
+            )));
+        }
+        let resp: EmbeddingResponse = response
+            .json()
+            .await
+            .map_err(|e| VibeError::Embedding(format!("failed to parse response: {e}")))?;
+        let vectors: Vec<Vec<f32>> = resp.data.into_iter().map(|d| d.embedding).collect();
+        if let Some(first) = vectors.first() {
+            let _ = self.embed_dim.set(first.len());
+        }
+        Ok(vectors)
+    }
+
+    fn dim(&self) -> usize {
+        *self.embed_dim.get().unwrap_or(&0)
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model_name
     }
 }

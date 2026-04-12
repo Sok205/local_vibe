@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use lv_core::traits::{InferenceBackend, VectorStore};
+use lv_core::traits::{EmbeddingBackend, InferenceBackend, VectorStore};
 use lv_core::types::{IndexProgress, SearchFilter};
 use lv_rag::chunker::OverlappingChunker;
 use lv_rag::indexer::IndexManager;
@@ -41,16 +41,23 @@ pub struct IndexDirectoryParams {
 
 #[derive(Clone)]
 pub struct VibeMcpServer {
-    backend: Arc<dyn InferenceBackend>,
+    #[allow(dead_code)]
+    inference: Arc<dyn InferenceBackend>,
+    embedder: Arc<dyn EmbeddingBackend>,
     store: Arc<dyn VectorStore>,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
 
 impl VibeMcpServer {
-    pub fn new(backend: Arc<dyn InferenceBackend>, store: Arc<dyn VectorStore>) -> Self {
+    pub fn new(
+        inference: Arc<dyn InferenceBackend>,
+        embedder: Arc<dyn EmbeddingBackend>,
+        store: Arc<dyn VectorStore>,
+    ) -> Self {
         Self {
-            backend,
+            inference,
+            embedder,
             store,
             tool_router: Self::tool_router(),
         }
@@ -81,7 +88,7 @@ impl VibeMcpServer {
             file_path: params.file_path,
         };
 
-        let query_engine = QueryEngine::new(self.backend.clone(), self.store.clone());
+        let query_engine = QueryEngine::new(self.embedder.clone(), self.store.clone());
         let results = query_engine
             .search(&params.query, limit, threshold, &filter)
             .await
@@ -133,7 +140,7 @@ impl VibeMcpServer {
         let manager = IndexManager::new(
             Self::build_parsers(),
             Box::new(OverlappingChunker::new(chunk_size, chunk_overlap)),
-            self.backend.clone(),
+            self.embedder.clone(),
             self.store.clone(),
             concurrency,
         );

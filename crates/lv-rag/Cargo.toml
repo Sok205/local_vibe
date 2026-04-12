@@ -30,3 +30,4 @@ tree-sitter-python = "0.23"
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt"] }

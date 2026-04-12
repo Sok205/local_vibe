@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use lv_core::traits::{InferenceBackend, VectorStore};
+use lv_core::traits::{EmbeddingBackend, VectorStore};
 use lv_core::types::{SearchFilter, SearchResult};
 use lv_core::{Result, VibeError};
 
@@ -13,13 +13,13 @@ User Question:
 {{user_query}}"#;
 
 pub struct QueryEngine {
-    backend: Arc<dyn InferenceBackend>,
+    embedder: Arc<dyn EmbeddingBackend>,
     store: Arc<dyn VectorStore>,
 }
 
 impl QueryEngine {
-    pub fn new(backend: Arc<dyn InferenceBackend>, store: Arc<dyn VectorStore>) -> Self {
-        Self { backend, store }
+    pub fn new(embedder: Arc<dyn EmbeddingBackend>, store: Arc<dyn VectorStore>) -> Self {
+        Self { embedder, store }
     }
 
     pub async fn search(
@@ -29,7 +29,7 @@ impl QueryEngine {
         threshold: f32,
         filter: &SearchFilter,
     ) -> Result<Vec<SearchResult>> {
-        let vectors = self.backend.embed(&[query]).await?;
+        let vectors = self.embedder.embed(&[query]).await?;
         let query_vector = vectors
             .into_iter()
             .next()

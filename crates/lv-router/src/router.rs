@@ -59,13 +59,6 @@ impl EscalatingRouter {
         Ok((used_tier, stream))
     }
 
-    /// Get embedding from the first available backend.
-    pub async fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        let (_, backend) = self.tiers.first()
-            .ok_or_else(|| lv_core::VibeError::BackendUnavailable("no backends registered".into()))?;
-        backend.embed(texts).await
-    }
-
     pub fn list_models(&self) -> Vec<(ModelTier, ModelInfo)> {
         self.tiers.iter().map(|(t, b)| (*t, b.model_info())).collect()
     }
