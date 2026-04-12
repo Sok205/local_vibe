@@ -1,0 +1,22 @@
+# Copy to `local-vibe.toml` next to your cwd or to ~/.config/local-vibe/config.toml.
+# Edit model_path and tokenizer_path to match *your* downloaded GGUF.
+#
+# See docs/superpowers/plans/2026-04-12-tui-demo.md Task 0 for download
+# instructions. Qwen 2.5 is supported; Qwen 3.5 (hybrid SSM) is NOT.
+
+[models.medium]
+name           = "qwen2.5-7b-instruct"
+backend        = "metal"
+quantization   = "q4_k_m"
+model_path     = "/Users/YOU/.lmstudio/models/lmstudio-community/Qwen2.5-7B-Instruct-GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+tokenizer_path = "/Users/YOU/.lmstudio/models/lmstudio-community/Qwen2.5-7B-Instruct-GGUF/tokenizer.json"
+
+[models.embedding]
+name    = "bge-small-en"    # or "nomic-embed-text" for 768-d
+# backend defaults to "fastembed" — no Python
+
+[rag]
+# Multi-DB mode: each subdir under db_root is a named vector store.
+# Switch inside the TUI with `/db <name>` and index into one with
+# `/index <path> <name>`.
+db_root = "/Users/YOU/.local/share/local-vibe/dbs"
