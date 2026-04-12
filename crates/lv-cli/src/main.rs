@@ -61,18 +61,14 @@ async fn main() -> anyhow::Result<()> {
         Some(Command::Ask { question }) => run_ask(config, &question).await,
         Some(Command::Index { path }) => {
             let p = path.unwrap_or_else(|| ".".to_string());
-            eprintln!("[stub] Indexing path: {p} — will be wired in integration task");
-            Ok(())
+            run_index(config, &p).await
         }
         Some(Command::Serve) => {
             eprintln!("[stub] MCP server on stdio — will be wired in integration task");
             Ok(())
         }
         Some(Command::Models) => run_models(&config),
-        Some(Command::Stats) => {
-            eprintln!("[stub] Index stats — will be wired in integration task");
-            Ok(())
-        }
+        Some(Command::Stats) => run_stats(config).await,
     }
 }
 
@@ -308,4 +304,59 @@ async fn handle_ask(
             let _ = event_tx.send(AppEvent::Error(e.to_string())).await;
         }
     }
+}
+
+async fn run_index(config: Config, path: &str) -> anyhow::Result<()> {
+    use lv_rag::chunker::OverlappingChunker;
+    use lv_rag::indexer::IndexManager;
+    use lv_rag::parsers::{epub::EpubParser, html::HtmlParser, pdf::PdfParser, text::TextParser};
+
+    let ctx = AppContext::new(config);
+    let Some(embedder) = ctx.embedding().await? else {
+        anyhow::bail!(
+            "cannot index: no embedding model configured. \
+             Set [models.embedding] in local-vibe.toml to enable RAG."
+        );
+    };
+    let store = ctx.store().await?;
+
+    let parsers: Vec<Box<dyn lv_core::traits::Parser>> = vec![
+        Box::new(TextParser),
+        Box::new(PdfParser),
+        Box::new(HtmlParser),
+        Box::new(EpubParser),
+    ];
+    let chunker = Box::new(OverlappingChunker::new(200, 40));
+    let manager = IndexManager::new(parsers, chunker, embedder, store, 4);
+
+    let dir = std::path::Path::new(path);
+    let (mut rx, handle, _cancel) = manager.index(dir).await?;
+    while let Some(progress) = rx.recv().await {
+        match progress {
+            lv_core::types::IndexProgress::Indexing { done, total, current } => {
+                eprintln!("[{done}/{total}] {current}");
+            }
+            lv_core::types::IndexProgress::Complete { indexed, skipped, failed } => {
+                eprintln!("Indexed: {indexed}, skipped: {skipped}, failed: {failed}");
+            }
+            _ => {}
+        }
+    }
+    handle.await??;
+    Ok(())
+}
+
+async fn run_stats(config: Config) -> anyhow::Result<()> {
+    let ctx = AppContext::new(config);
+    if ctx.embedding().await?.is_none() {
+        println!("RAG disabled (no [models.embedding] configured).");
+        return Ok(());
+    }
+    let store = ctx.store().await?;
+    let stats = store.stats().await?;
+    println!(
+        "Indexed store: {} chunks from {} unique files",
+        stats.total_chunks, stats.unique_files
+    );
+    Ok(())
 }
