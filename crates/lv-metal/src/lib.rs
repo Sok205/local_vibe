@@ -24,6 +24,15 @@ struct MetalInner {
     last_session_id: Option<Uuid>,
 }
 
+/// Candle + Metal inference backend for GGUF models.
+///
+/// **Concurrency:** Generation is serialized via an internal `Mutex`. A second
+/// `complete()` call waits until the first finishes. This is intentional for
+/// CLI and single-tool MCP usage. For concurrent tool execution (e.g. `/agent`
+/// mode spawning multiple calls), replace the mutex with a worker task that
+/// owns `MetalInner` and services requests over an mpsc channel — the
+/// `session_id` field on `CompletionRequest` already carries enough routing
+/// information for per-session state to live in the worker.
 pub struct MetalBackend {
     inner: Arc<Mutex<MetalInner>>,
     model_name: String,
@@ -94,8 +103,18 @@ impl InferenceBackend for MetalBackend {
         tokio::task::spawn_blocking(move || {
             let mut sampler = Sampler::new(42, temperature, Some(0.95), Some(40));
 
+            let lock_start = std::time::Instant::now();
             let mut guard = match inner.lock() {
-                Ok(g) => g,
+                Ok(g) => {
+                    let waited = lock_start.elapsed();
+                    if waited > std::time::Duration::from_millis(50) {
+                        tracing::warn!(
+                            "MetalBackend serialized generation for {waited:?} — consider worker-task \
+                             refactor if this becomes common"
+                        );
+                    }
+                    g
+                }
                 Err(e) => {
                     let _ = tx.blocking_send(Err(VibeError::Inference(format!("lock poisoned: {e}"))));
                     return;
