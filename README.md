@@ -125,7 +125,7 @@ lv ask "<question>"   # one-shot chat; streams to stdout
 lv index <path>       # index a directory into the current DB
 lv stats              # chunk / file counts in the current DB
 lv models             # print the configured backend for each tier
-lv serve              # ⚠ stub — MCP server is not yet wired
+lv serve              # MCP server on stdio (for Claude Code etc.)
 lv --help
 ```
 
@@ -157,6 +157,30 @@ Status bar shows `[tier: model]  [db: name]  [N indexed]` plus a live
 
 ---
 
+## Use as an MCP server
+
+`lv serve` speaks MCP over stdio, so any MCP client (Claude Code, Cursor,
+custom agents) can call into the local index. Four tools are exposed:
+
+| Tool              | What it does                                         |
+| ----------------- | ---------------------------------------------------- |
+| `search_code`     | semantic search; filters by language / file_path     |
+| `index_directory` | parse + chunk + embed a directory into the store     |
+| `get_stats`       | total chunks and unique files                        |
+| `list_sources`    | summary of indexed files                             |
+
+Wire it into Claude Code:
+
+```bash
+claude mcp add lv lv serve
+```
+
+The server uses the *current* DB (whichever `/db <name>` would pick in the
+TUI). Logs go to `~/.local/share/local-vibe/lv-mcp.log` so they don't
+corrupt the JSON-RPC frames on stdout.
+
+---
+
 ## Project layout
 
 ```
@@ -182,7 +206,6 @@ Working end-to-end today:
 
 Known gaps / rough edges:
 
-- **`lv serve`** — MCP-over-stdio is a stub (`main.rs`).
 - **Qwen 3.5 hybrid SSM** — Candle has no backend for `general.architecture = "qwen35"`; use Qwen 2.5 or Llama / Gemma for now.
 - **`fastembed` cache is cwd-relative** (fastembed 5.x default). Gitignore
   `./.fastembed_cache/` or plan to pin a global cache dir.

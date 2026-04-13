@@ -10,8 +10,16 @@ use lv_rag::query::QueryEngine;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
-    schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
+    schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler, ServiceExt,
 };
+
+pub async fn run_stdio(
+    server: VibeMcpServer,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let service = server.serve(rmcp::transport::stdio()).await?;
+    service.waiting().await?;
+    Ok(())
+}
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SearchCodeParams {

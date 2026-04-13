@@ -47,18 +47,20 @@ enum Command {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let is_tui = cli.command.is_none();
+    let is_serve = matches!(cli.command, Some(Command::Serve));
 
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
 
-    if is_tui {
-        // TUI owns the terminal; redirect logs to a file so they don't overwrite
-        // the rendered frame. Tail with: `tail -f ~/.local/share/local-vibe/lv.log`.
+    if is_tui || is_serve {
+        // TUI owns the terminal; serve owns stdout for JSON-RPC frames. Either way,
+        // route logs to a file so they don't corrupt the protocol or the UI.
         let log_dir = dirs::data_local_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .join("local-vibe");
         std::fs::create_dir_all(&log_dir).ok();
-        let log_path = log_dir.join("lv.log");
+        let log_name = if is_serve { "lv-mcp.log" } else { "lv.log" };
+        let log_path = log_dir.join(log_name);
         let log_file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -85,10 +87,7 @@ async fn main() -> anyhow::Result<()> {
             let p = path.unwrap_or_else(|| ".".to_string());
             run_index(config, &p).await
         }
-        Some(Command::Serve) => {
-            eprintln!("[stub] MCP server on stdio — will be wired in integration task");
-            Ok(())
-        }
+        Some(Command::Serve) => run_serve(config).await,
         Some(Command::Models) => run_models(&config),
         Some(Command::Stats) => run_stats(config).await,
     }
@@ -463,6 +462,28 @@ async fn run_index(config: Config, path: &str) -> anyhow::Result<()> {
         }
     }
     handle.await??;
+    Ok(())
+}
+
+async fn run_serve(config: Config) -> anyhow::Result<()> {
+    let ctx = AppContext::new(config);
+    let inference = ctx.inference().await.context("inference backend init")?;
+    let embedder = ctx
+        .embedding()
+        .await
+        .context("embedding backend init")?
+        .context(
+            "MCP serve requires an embedding model. \
+             Set [models.embedding] in local-vibe.toml.",
+        )?;
+    let store = ctx.store().await.context("vector store init")?;
+
+    tracing::info!("MCP server starting on stdio");
+    let server = lv_mcp::VibeMcpServer::new(inference, embedder, store);
+    lv_mcp::run_stdio(server)
+        .await
+        .map_err(|e| anyhow::anyhow!("MCP server: {e}"))?;
+    tracing::info!("MCP server stopped");
     Ok(())
 }
 
