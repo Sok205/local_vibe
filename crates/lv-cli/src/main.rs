@@ -17,7 +17,7 @@ mod app_context;
 use app_context::AppContext;
 
 #[derive(Parser)]
-#[command(name = "local-vibe", about = "Local AI coding assistant", version)]
+#[command(name = "lv", about = "Local AI coding assistant", version)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
