@@ -191,6 +191,7 @@ async fn index_single_file(
     let vectors = embedder.embed(&texts).await?;
 
     let file_path_str = file.path.to_string_lossy().into_owned();
+    let language = language_from_path(&file.path);
     let documents: Vec<Document> = chunks
         .iter()
         .zip(vectors.into_iter())
@@ -202,11 +203,64 @@ async fn index_single_file(
             file_name: file.name.clone(),
             file_hash: file_hash.clone(),
             chunk_index: i as u32,
-            language: None,
+            language: language.clone(),
             symbol_context: None,
         })
         .collect();
 
     store.add_documents(&documents).await?;
     Ok(FileOutcome::Indexed)
+}
+
+fn language_from_path(path: &std::path::Path) -> Option<String> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    let lang = match ext.as_str() {
+        "rs" => "rust",
+        "ts" | "tsx" => "typescript",
+        "js" | "jsx" | "mjs" | "cjs" => "javascript",
+        "py" | "pyi" => "python",
+        "go" => "go",
+        "java" => "java",
+        "kt" | "kts" => "kotlin",
+        "swift" => "swift",
+        "c" | "h" => "c",
+        "cc" | "cpp" | "cxx" | "hpp" | "hh" => "cpp",
+        "cs" => "csharp",
+        "rb" => "ruby",
+        "php" => "php",
+        "sh" | "bash" | "zsh" => "shell",
+        "md" | "markdown" => "markdown",
+        "html" | "htm" => "html",
+        "css" | "scss" | "sass" | "less" => "css",
+        "json" => "json",
+        "yaml" | "yml" => "yaml",
+        "toml" => "toml",
+        "xml" => "xml",
+        "sql" => "sql",
+        "pdf" => "pdf",
+        "epub" => "epub",
+        "txt" => "text",
+        _ => return None,
+    };
+    Some(lang.to_string())
+}
+
+#[cfg(test)]
+mod language_tests {
+    use super::language_from_path;
+    use std::path::Path;
+
+    #[test]
+    fn maps_common_code_extensions() {
+        assert_eq!(language_from_path(Path::new("a.rs")).as_deref(), Some("rust"));
+        assert_eq!(language_from_path(Path::new("a.tsx")).as_deref(), Some("typescript"));
+        assert_eq!(language_from_path(Path::new("a.PY")).as_deref(), Some("python"));
+        assert_eq!(language_from_path(Path::new("a.md")).as_deref(), Some("markdown"));
+    }
+
+    #[test]
+    fn returns_none_for_unknown_extension() {
+        assert_eq!(language_from_path(Path::new("a.xyz")), None);
+        assert_eq!(language_from_path(Path::new("noext")), None);
+    }
 }
