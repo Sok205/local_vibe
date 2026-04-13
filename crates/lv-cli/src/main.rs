@@ -467,7 +467,6 @@ async fn run_index(config: Config, path: &str) -> anyhow::Result<()> {
 
 async fn run_serve(config: Config) -> anyhow::Result<()> {
     let ctx = AppContext::new(config);
-    let inference = ctx.inference().await.context("inference backend init")?;
     let embedder = ctx
         .embedding()
         .await
@@ -479,7 +478,7 @@ async fn run_serve(config: Config) -> anyhow::Result<()> {
     let store = ctx.store().await.context("vector store init")?;
 
     tracing::info!("MCP server starting on stdio");
-    let server = lv_mcp::VibeMcpServer::new(inference, embedder, store);
+    let server = lv_mcp::VibeMcpServer::new(embedder, store);
     lv_mcp::run_stdio(server)
         .await
         .map_err(|e| anyhow::anyhow!("MCP server: {e}"))?;

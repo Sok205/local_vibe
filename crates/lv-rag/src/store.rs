@@ -11,7 +11,7 @@ use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::{connect, Connection, Table as LanceTable};
 use tokio::sync::RwLock;
 
-use lv_core::types::{Document, SearchFilter, SearchResult, StoreStats};
+use lv_core::types::{Document, FileSummary, SearchFilter, SearchResult, StoreStats};
 use lv_core::{Result, VibeError};
 
 /// Vector store backed by LanceDB (embedded, persistent, Arrow-based).
@@ -347,5 +347,64 @@ impl lv_core::traits::VectorStore for LanceStore {
             total_chunks: count,
             unique_files: unique_hashes.len(),
         })
+    }
+
+    async fn list_files(&self, limit: usize) -> Result<Vec<FileSummary>> {
+        let guard = self.table.read().await;
+        let table = match &*guard {
+            Some(t) => t,
+            None => return Ok(Vec::new()),
+        };
+
+        let results = table
+            .query()
+            .select(lancedb::query::Select::columns(&["file_path", "language"]))
+            .execute()
+            .await
+            .map_err(|e| VibeError::Store(format!("Query failed: {e}")))?;
+
+        use rustc_hash::FxHashMap;
+        let mut by_path: FxHashMap<String, FileSummary> = FxHashMap::default();
+        futures::pin_mut!(results);
+        while let Some(batch) = results
+            .try_next()
+            .await
+            .map_err(|e| VibeError::Store(format!("Failed to read batch: {e}")))?
+        {
+            let paths = batch
+                .column_by_name("file_path")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let langs = batch
+                .column_by_name("language")
+                .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            for i in 0..paths.len() {
+                let path = paths.value(i).to_string();
+                let lang = langs.and_then(|l| {
+                    if l.is_null(i) {
+                        None
+                    } else {
+                        Some(l.value(i).to_string())
+                    }
+                });
+                by_path
+                    .entry(path.clone())
+                    .and_modify(|s| s.chunk_count += 1)
+                    .or_insert(FileSummary {
+                        file_path: path,
+                        language: lang,
+                        chunk_count: 1,
+                    });
+            }
+        }
+
+        let mut out: Vec<FileSummary> = by_path.into_values().collect();
+        out.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+        if out.len() > limit {
+            out.truncate(limit);
+        }
+        Ok(out)
     }
 }

@@ -31,6 +31,7 @@ impl VectorStore for StubStore {
     async fn delete_by_hash(&self, _: &str) -> Result<()> { Ok(()) }
     async fn has_file(&self, _: &str) -> Result<bool> { Ok(false) }
     async fn stats(&self) -> Result<StoreStats> { Ok(StoreStats { total_chunks: 0, unique_files: 0 }) }
+    async fn list_files(&self, _: usize) -> Result<Vec<lv_core::types::FileSummary>> { Ok(Vec::new()) }
 }
 
 #[tokio::test]

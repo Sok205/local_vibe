@@ -24,6 +24,7 @@ pub trait VectorStore: Send + Sync {
     async fn delete_by_hash(&self, file_hash: &str) -> Result<()>;
     async fn has_file(&self, file_hash: &str) -> Result<bool>;
     async fn stats(&self) -> Result<StoreStats>;
+    async fn list_files(&self, limit: usize) -> Result<Vec<FileSummary>>;
 }
 
 pub trait Parser: Send + Sync {

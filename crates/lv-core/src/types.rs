@@ -106,6 +106,13 @@ pub struct StoreStats {
     pub unique_files: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct FileSummary {
+    pub file_path: String,
+    pub language: Option<String>,
+    pub chunk_count: usize,
+}
+
 // --- Code graph types ---
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

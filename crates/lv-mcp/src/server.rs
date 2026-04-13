@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use lv_core::traits::{EmbeddingBackend, InferenceBackend, VectorStore};
+use lv_core::traits::{EmbeddingBackend, VectorStore};
 use lv_core::types::{IndexProgress, SearchFilter};
 use lv_rag::chunker::OverlappingChunker;
 use lv_rag::indexer::IndexManager;
@@ -36,6 +36,12 @@ pub struct SearchCodeParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ListSourcesParams {
+    /// Maximum number of files to return (default: 200)
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct IndexDirectoryParams {
     /// Absolute path to the directory to index
     pub path: String,
@@ -49,8 +55,6 @@ pub struct IndexDirectoryParams {
 
 #[derive(Clone)]
 pub struct VibeMcpServer {
-    #[allow(dead_code)]
-    inference: Arc<dyn InferenceBackend>,
     embedder: Arc<dyn EmbeddingBackend>,
     store: Arc<dyn VectorStore>,
     #[allow(dead_code)]
@@ -59,12 +63,10 @@ pub struct VibeMcpServer {
 
 impl VibeMcpServer {
     pub fn new(
-        inference: Arc<dyn InferenceBackend>,
         embedder: Arc<dyn EmbeddingBackend>,
         store: Arc<dyn VectorStore>,
     ) -> Self {
         Self {
-            inference,
             embedder,
             store,
             tool_router: Self::tool_router(),
@@ -200,24 +202,36 @@ impl VibeMcpServer {
         ))]))
     }
 
-    #[tool(description = "Get a summary of indexed files in the vector store.")]
-    async fn list_sources(&self) -> Result<CallToolResult, McpError> {
-        let stats = self
+    #[tool(description = "List indexed files with their language and chunk count. Returns up to `limit` files (default 200), sorted by path.")]
+    async fn list_sources(
+        &self,
+        Parameters(params): Parameters<ListSourcesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let limit = params.limit.unwrap_or(200) as usize;
+        let files = self
             .store
-            .stats()
+            .list_files(limit)
             .await
             .map_err(|e| McpError::internal_error(format!("List sources failed: {e}"), None))?;
 
-        if stats.total_chunks == 0 {
+        if files.is_empty() {
             return Ok(CallToolResult::success(vec![Content::text(
                 "No files indexed yet.",
             )]));
         }
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "{} unique files indexed with {} total chunks.\n\nUse search_code to query the indexed content.",
-            stats.unique_files, stats.total_chunks
-        ))]))
+        let mut out = String::new();
+        out.push_str(&format!("{} files (showing up to {}):\n\n", files.len(), limit));
+        for f in &files {
+            let lang = f.language.as_deref().unwrap_or("?");
+            out.push_str(&format!(
+                "  [{lang}] {} ({} chunk{})\n",
+                f.file_path,
+                f.chunk_count,
+                if f.chunk_count == 1 { "" } else { "s" }
+            ));
+        }
+        Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 }
 
