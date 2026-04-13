@@ -4415,6 +4415,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "dirs",
  "futures",
  "lv-core",
  "lv-inference",
@@ -4423,6 +4424,7 @@ dependencies = [
  "lv-rag",
  "lv-tui",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
