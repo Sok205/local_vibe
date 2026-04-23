@@ -1,4 +1,5 @@
 pub mod chat;
+pub mod models;
 pub mod placeholder;
 
 use crate::app::AppCommand;

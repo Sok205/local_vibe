@@ -22,7 +22,10 @@ use tracing::error;
 use crate::{
     overlay::{Overlay, OverlayAction},
     overlays::HelpOverlay,
-    sections::{Section, SectionOutcome, chat::ChatSection, placeholder::PlaceholderSection},
+    sections::{
+        Section, SectionOutcome, chat::ChatSection, models::ModelsSection,
+        placeholder::PlaceholderSection,
+    },
     status_bar::{StatusBarView, draw_status_bar},
     widgets::sidebar::draw_sidebar,
 };
@@ -89,7 +92,7 @@ pub struct IndexingProgress {
 struct AppState {
     active_section: Section,
     chat_section: ChatSection,
-    models_section: PlaceholderSection,
+    models_section: ModelsSection,
     databases_section: PlaceholderSection,
     index_section: PlaceholderSection,
     settings_section: PlaceholderSection,
@@ -108,7 +111,7 @@ impl AppState {
         Self {
             active_section: Section::Chat,
             chat_section: ChatSection::new(),
-            models_section: PlaceholderSection::models(),
+            models_section: ModelsSection::new(),
             databases_section: PlaceholderSection::databases(),
             index_section: PlaceholderSection::index(),
             settings_section: PlaceholderSection::settings(),
@@ -123,7 +126,7 @@ impl AppState {
         }
     }
 
-    fn draw_section(&self, frame: &mut ratatui::Frame, area: Rect) {
+    fn draw_section(&mut self, frame: &mut ratatui::Frame, area: Rect) {
         match self.active_section {
             Section::Chat => self.chat_section.draw(frame, area),
             Section::Models => self.models_section.draw(frame, area),
@@ -240,6 +243,11 @@ pub async fn run_tui(
                 && let Some(section) = Section::from_digit(c)
             {
                 state.active_section = section;
+                // Refresh section-specific data on entry. Cheap operations;
+                // the backend replies with an event that updates the section.
+                if section == Section::Models {
+                    let _ = command_tx.send(AppCommand::Models).await;
+                }
                 continue;
             }
 
@@ -354,8 +362,8 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
         AppEvent::Status(_) => {
             // Status is now shown ambiently in the top strip; no overlay in 3.0.
         }
-        AppEvent::ModelsSnapshot(_) => {
-            // Handled by the upcoming Models section (Phase 2).
+        AppEvent::ModelsSnapshot(rows) => {
+            state.models_section.update(rows);
         }
         AppEvent::ModelLoading(_) | AppEvent::ModelLoaded(_) | AppEvent::ModelUnloaded(_) => {}
         AppEvent::ModelLoadFailed(tier, err) => {
