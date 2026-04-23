@@ -3,6 +3,7 @@ pub mod databases;
 pub mod index;
 pub mod models;
 pub mod placeholder;
+pub mod settings;
 
 use crate::app::AppCommand;
 

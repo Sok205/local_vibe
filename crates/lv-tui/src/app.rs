@@ -24,7 +24,7 @@ use crate::{
     overlays::HelpOverlay,
     sections::{
         Section, SectionOutcome, chat::ChatSection, databases::DatabasesSection,
-        index::IndexSection, models::ModelsSection, placeholder::PlaceholderSection,
+        index::IndexSection, models::ModelsSection, settings::SettingsSection,
     },
     status_bar::{StatusBarView, draw_status_bar},
     widgets::sidebar::draw_sidebar,
@@ -95,7 +95,7 @@ struct AppState {
     models_section: ModelsSection,
     databases_section: DatabasesSection,
     index_section: IndexSection,
-    settings_section: PlaceholderSection,
+    settings_section: SettingsSection,
     model_tier: ModelTier,
     model_name: String,
     store_stats: Option<StoreStats>,
@@ -114,7 +114,7 @@ impl AppState {
             models_section: ModelsSection::new(),
             databases_section: DatabasesSection::new(),
             index_section: IndexSection::new(),
-            settings_section: PlaceholderSection::settings(),
+            settings_section: SettingsSection::new(),
             model_tier: ModelTier::Fast,
             model_name: "unknown".to_string(),
             store_stats: None,
@@ -255,6 +255,9 @@ pub async fn run_tui(
                     Section::Index => {
                         state.index_section.prefill_db(&state.current_db);
                     }
+                    Section::Settings => {
+                        let _ = command_tx.send(AppCommand::Status).await;
+                    }
                     _ => {}
                 }
                 continue;
@@ -371,6 +374,7 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
         }
         AppEvent::Status(snapshot) => {
             state.databases_section.update(snapshot.databases.clone());
+            state.settings_section.update(*snapshot);
         }
         AppEvent::ModelsSnapshot(rows) => {
             state.models_section.update(rows);
