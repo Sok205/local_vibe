@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io;
 use std::time::Duration;
 
@@ -21,7 +22,7 @@ use tracing::error;
 
 use crate::{
     overlay::{Overlay, OverlayAction},
-    overlays::HelpOverlay,
+    overlays::{HelpOverlay, StartupOverlay},
     sections::{
         Section, SectionOutcome, chat::ChatSection, databases::DatabasesSection,
         index::IndexSection, models::ModelsSection, settings::SettingsSection,
@@ -105,6 +106,8 @@ struct AppState {
     overlay: Option<Box<dyn Overlay>>,
     warm_count: usize,
     active_loading: bool,
+    startup: Option<StartupOverlay>,
+    session_disabled: HashSet<ModelTier>,
 }
 
 impl AppState {
@@ -124,6 +127,8 @@ impl AppState {
             overlay: None,
             warm_count: 0,
             active_loading: false,
+            startup: Some(StartupOverlay::new()),
+            session_disabled: HashSet::new(),
         }
     }
 
@@ -219,10 +224,25 @@ pub async fn run_tui(
             if let Some(overlay) = state.overlay.as_mut() {
                 overlay.draw(frame, size);
             }
+            if let Some(startup) = state.startup.as_ref() {
+                startup.draw(frame, size);
+            }
         })?;
 
         if event::poll(poll_interval)? && let Event::Key(key) = event::read()? {
-            // Overlay takes priority.
+            // Startup chooser takes priority over everything.
+            if let Some(startup) = state.startup.as_mut() {
+                if startup.handle_key(key) {
+                    state.session_disabled = startup.confirm();
+                    state.startup = None;
+                    // Prime the sections once the user is in.
+                    let _ = command_tx.send(AppCommand::Models).await;
+                    let _ = command_tx.send(AppCommand::Status).await;
+                }
+                continue;
+            }
+
+            // Regular overlay takes priority.
             if let Some(overlay) = state.overlay.as_mut() {
                 match overlay.handle_key(key) {
                     OverlayAction::None => {}
@@ -287,6 +307,17 @@ pub async fn run_tui(
                             break;
                         }
                         AppCommand::Ask { query } => {
+                            if state.session_disabled.contains(&state.model_tier) {
+                                state.chat_section.chat.push_message(Message {
+                                    role: Role::System,
+                                    content: format!(
+                                        "{} tier is disabled for this session. \
+                                         Press F2 to load a different model.",
+                                        tier_label(state.model_tier)
+                                    ),
+                                });
+                                continue;
+                            }
                             state.chat_section.chat.push_message(Message {
                                 role: Role::User,
                                 content: query.clone(),
@@ -297,6 +328,20 @@ pub async fn run_tui(
                     let _ = command_tx.send(cmd).await;
                 }
                 SectionOutcome::RunCommand(cmd) => {
+                    // Block load commands for session-disabled tiers.
+                    let blocked_tier = match &cmd {
+                        AppCommand::LoadModel(t) | AppCommand::LoadAndActivate(t) => {
+                            if state.session_disabled.contains(t) { Some(*t) } else { None }
+                        }
+                        _ => None,
+                    };
+                    if let Some(t) = blocked_tier {
+                        state.models_section.set_footer(format!(
+                            "{} is disabled for this session",
+                            tier_label(t)
+                        ));
+                        continue;
+                    }
                     let _ = command_tx.send(cmd).await;
                 }
                 SectionOutcome::Unhandled => {

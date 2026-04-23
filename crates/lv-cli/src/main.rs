@@ -37,7 +37,12 @@ enum Command {
         path: Option<String>,
     },
     /// Start MCP server on stdio
-    Serve,
+    Serve {
+        /// Pre-load a chat tier at startup (fast, medium, strong).
+        /// Omit to keep all models lazy (load on first use).
+        #[arg(long, value_name = "TIER")]
+        tier: Option<String>,
+    },
     /// List configured models
     Models,
     /// Show index stats for the current DB
@@ -69,7 +74,7 @@ enum Command {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let is_tui = cli.command.is_none();
-    let is_serve = matches!(cli.command, Some(Command::Serve));
+    let is_serve = matches!(cli.command, Some(Command::Serve { .. }));
 
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
@@ -109,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
             let p = path.unwrap_or_else(|| ".".to_string());
             run_index(config, &p).await
         }
-        Some(Command::Serve) => run_serve(config).await,
+        Some(Command::Serve { tier }) => run_serve(config, tier).await,
         Some(Command::Models) => run_models(&config),
         Some(Command::Stats) => run_stats(config).await,
         Some(Command::Status { json }) => run_status(config, json).await,
@@ -635,8 +640,17 @@ async fn run_index(config: Config, path: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_serve(config: Config) -> anyhow::Result<()> {
+async fn run_serve(config: Config, tier: Option<String>) -> anyhow::Result<()> {
     let ctx: Arc<AppContext> = Arc::new(AppContext::new(config));
+    if let Some(ref t) = tier {
+        let model_tier = parse_tier(t)?;
+        tracing::info!("pre-loading tier '{t}' before MCP server start");
+        ctx.load_model(model_tier).await
+            .with_context(|| format!("failed to pre-load tier '{t}'"))?;
+        ctx.set_active_tier(model_tier).await
+            .with_context(|| format!("failed to set active tier '{t}'"))?;
+        tracing::info!("tier '{t}' warm and active");
+    }
     tracing::info!("MCP server starting on stdio");
     let host: Arc<dyn AppHost> = ctx;
     let server = lv_mcp::VibeMcpServer::new(host);
@@ -645,6 +659,11 @@ async fn run_serve(config: Config) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("MCP server: {e}"))?;
     tracing::info!("MCP server stopped");
     Ok(())
+}
+
+fn parse_tier(s: &str) -> anyhow::Result<ModelTier> {
+    s.parse::<ModelTier>()
+        .map_err(|()| anyhow::anyhow!("unknown tier '{s}'; use fast, medium, or strong"))
 }
 
 async fn run_stats(config: Config) -> anyhow::Result<()> {

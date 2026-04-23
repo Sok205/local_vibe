@@ -74,6 +74,21 @@ impl ModelTier {
             ModelTier::Cloud => "cloud",
         }
     }
+
+}
+
+impl std::str::FromStr for ModelTier {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "fast" => Ok(ModelTier::Fast),
+            "medium" => Ok(ModelTier::Medium),
+            "strong" => Ok(ModelTier::Strong),
+            "cloud" => Ok(ModelTier::Cloud),
+            _ => Err(()),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

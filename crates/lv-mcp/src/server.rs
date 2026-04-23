@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use lv_core::status::collect_declared_status;
 use lv_core::traits::{AppHost, VectorStore};
-use lv_core::types::{IndexProgress, SearchFilter};
+use lv_core::types::{IndexProgress, ModelTier, SearchFilter};
 use lv_rag::chunker::OverlappingChunker;
 use lv_rag::indexer::IndexManager;
 use lv_rag::parsers::{epub::EpubParser, html::HtmlParser, pdf::PdfParser, text::TextParser};
@@ -42,6 +42,18 @@ pub struct SearchCodeParams {
 pub struct StatsParams {
     /// DB name. When omitted, uses the server's current DB.
     pub db: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SwitchModelParams {
+    /// Chat tier to load and activate: "fast", "medium", or "strong"
+    pub tier: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct GetStatusParams {
+    /// Return raw JSON instead of formatted text (default: false)
+    pub json: Option<bool>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -292,15 +304,104 @@ impl VibeMcpServer {
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
-    #[tool(description = "Get a full status snapshot: configured models, every indexed DB with per-language breakdown, and runtime state (warm models/DBs). Returns JSON.")]
-    async fn get_status(&self) -> Result<CallToolResult, McpError> {
+    #[tool(description = "Get a status snapshot of the local-vibe server: configured models with warm/cold state, active tier, indexed DBs with chunk/file counts, and runtime info (PID, session). Returns human-readable text by default; pass json=true for machine-readable JSON.")]
+    async fn get_status(
+        &self,
+        Parameters(params): Parameters<GetStatusParams>,
+    ) -> Result<CallToolResult, McpError> {
         let current = self.host.current_db().await;
         let snapshot = collect_declared_status(&*self.host, Some(&current))
             .await
             .map_err(|e| McpError::internal_error(format!("status: {e}"), None))?;
-        let json = serde_json::to_string_pretty(&snapshot)
-            .map_err(|e| McpError::internal_error(format!("serialize status: {e}"), None))?;
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+
+        if params.json.unwrap_or(false) {
+            let json = serde_json::to_string_pretty(&snapshot)
+                .map_err(|e| McpError::internal_error(format!("serialize status: {e}"), None))?;
+            return Ok(CallToolResult::success(vec![Content::text(json)]));
+        }
+
+        let mut out = String::new();
+
+        // Models
+        out.push_str("=== Models ===\n");
+        let rt = snapshot.runtime.as_ref();
+        let warm: std::collections::HashSet<&str> = rt
+            .map(|r| r.warm_models.iter().map(String::as_str).collect())
+            .unwrap_or_default();
+        let active_tier = self.host.active_tier().await;
+        for (label, slot) in [
+            ("fast  ", &snapshot.models.fast),
+            ("medium", &snapshot.models.medium),
+            ("strong", &snapshot.models.strong),
+        ] {
+            let state = if warm.contains(label.trim()) { "warm" } else { "cold" };
+            let active_mark = if label.trim().parse::<ModelTier>() == Ok(active_tier) { " ← active" } else { "" };
+            out.push_str(&format!("  {label}  {:22}  {:8}  {state}{active_mark}\n", slot.name, slot.backend));
+        }
+        if let Some(emb) = &snapshot.models.embedding {
+            let state = if warm.contains("embedding") { "warm" } else { "cold" };
+            out.push_str(&format!("  embed   {:22}  {:8}  {state}\n", emb.name, emb.backend));
+        } else {
+            out.push_str("  embed   (not configured — RAG disabled)\n");
+        }
+
+        // DBs
+        if !snapshot.databases.is_empty() {
+            out.push_str("\n=== Indexed DBs ===\n");
+            for db in &snapshot.databases {
+                let current_mark = if db.is_current { " ← current" } else { "" };
+                out.push_str(&format!("  {:16}  {} chunks, {} files{}\n",
+                    db.name, db.total_chunks, db.unique_files, current_mark));
+                if !db.languages.is_empty() {
+                    let langs: Vec<String> = db.languages.iter()
+                        .map(|(l, n)| format!("{l}({n})"))
+                        .collect();
+                    out.push_str(&format!("                    languages: {}\n", langs.join(", ")));
+                }
+            }
+        } else {
+            out.push_str("\n=== Indexed DBs ===\n  (none)\n");
+        }
+
+        // Runtime
+        if let Some(rt) = snapshot.runtime {
+            out.push_str("\n=== Runtime ===\n");
+            out.push_str(&format!("  pid       {}\n", rt.pid));
+            if let Some(sid) = &rt.session_id {
+                out.push_str(&format!("  session   {sid}\n"));
+            }
+        }
+
+        if let Some(p) = &snapshot.config_path {
+            out.push_str(&format!("  config    {}\n", p.display()));
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(out)]))
+    }
+
+    #[tool(description = "Load and activate a chat model tier for this MCP session. Use this to switch which model responds to chat queries. Tier values: 'fast' (small/quick), 'medium' (balanced), 'strong' (best quality). Loading takes a few seconds on first call.")]
+    async fn switch_model(
+        &self,
+        Parameters(params): Parameters<SwitchModelParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let tier = params.tier.parse::<ModelTier>().map_err(|_| {
+            McpError::invalid_params(
+                format!("unknown tier '{}'; use fast, medium, or strong", params.tier),
+                None,
+            )
+        })?;
+        self.host
+            .load_model(tier)
+            .await
+            .map_err(|e| McpError::internal_error(format!("load model: {e}"), None))?;
+        self.host
+            .set_active_tier(tier)
+            .await
+            .map_err(|e| McpError::internal_error(format!("set active tier: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "Switched to '{}' tier. Model is now warm and active.",
+            params.tier
+        ))]))
     }
 }
 
