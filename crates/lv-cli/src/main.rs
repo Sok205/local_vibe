@@ -186,6 +186,9 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
                         }
                     }
                 }
+                AppCommand::Help => {
+                    // Help is handled entirely inside the TUI; never reaches the channel.
+                }
                 AppCommand::Quit => break,
             }
         }

@@ -22,6 +22,7 @@ use tracing::error;
 use crate::{
     chat_view::ChatView,
     context_panel::ContextPanel,
+    help_view::draw_help_overlay,
     input::{InputAction, InputBuffer},
     status_bar::draw_status_bar,
     status_view::draw_status_overlay,
@@ -48,6 +49,7 @@ pub enum AppCommand {
     ListDbs,
     SwitchDb(String),
     Status,
+    Help,
     Quit,
 }
 
@@ -59,6 +61,7 @@ pub enum AppCommand {
 /// - `/db <name>`           — `SwitchDb`
 /// - `/index <path> [name]` — `Index { path, db }`
 /// - `/status`              — `Status`
+/// - `/help`, `/?`          — `Help`
 ///
 /// Anything else becomes `Ask`.
 pub fn parse_input(line: &str) -> AppCommand {
@@ -71,6 +74,9 @@ pub fn parse_input(line: &str) -> AppCommand {
     }
     if trimmed == "/status" {
         return AppCommand::Status;
+    }
+    if trimmed == "/help" || trimmed == "/?" {
+        return AppCommand::Help;
     }
     if let Some(rest) = trimmed.strip_prefix("/db ") {
         return AppCommand::SwitchDb(rest.trim().to_string());
@@ -102,6 +108,7 @@ struct AppState {
     indexing: Option<IndexingProgress>,
     current_db: String,
     status_overlay: Option<StatusSnapshot>,
+    help_overlay: bool,
 }
 
 impl AppState {
@@ -116,6 +123,7 @@ impl AppState {
             indexing: None,
             current_db: "default".to_string(),
             status_overlay: None,
+            help_overlay: false,
         }
     }
 }
@@ -190,13 +198,21 @@ pub async fn run_tui(
             let cursor_y = rows[2].y + 1;
             frame.set_cursor_position((cursor_x, cursor_y));
 
-            // Status overlay paints last so it sits on top
-            if let Some(snap) = &state.status_overlay {
+            // Overlays paint last so they sit on top. Help wins if both are set.
+            if state.help_overlay {
+                draw_help_overlay(frame, size);
+            } else if let Some(snap) = &state.status_overlay {
                 draw_status_overlay(frame, size, snap);
             }
         })?;
 
         if event::poll(poll_interval)? && let Event::Key(key) = event::read()? {
+            if state.help_overlay {
+                if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
+                    state.help_overlay = false;
+                }
+                continue;
+            }
             if state.status_overlay.is_some() {
                 if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
                     state.status_overlay = None;
@@ -215,6 +231,10 @@ pub async fn run_tui(
                         AppCommand::Quit => {
                             let _ = command_tx.send(AppCommand::Quit).await;
                             break;
+                        }
+                        AppCommand::Help => {
+                            state.help_overlay = true;
+                            continue;
                         }
                         AppCommand::Ask { query } => {
                             state.chat.push_message(Message {
@@ -363,5 +383,12 @@ mod tests {
     fn parse_status() {
         assert!(matches!(parse_input("/status"), AppCommand::Status));
         assert!(matches!(parse_input("  /status  "), AppCommand::Status));
+    }
+
+    #[test]
+    fn parse_help_variants() {
+        assert!(matches!(parse_input("/help"), AppCommand::Help));
+        assert!(matches!(parse_input("/?"), AppCommand::Help));
+        assert!(matches!(parse_input("  /help  "), AppCommand::Help));
     }
 }
