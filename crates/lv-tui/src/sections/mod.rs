@@ -1,4 +1,5 @@
 pub mod chat;
+pub mod databases;
 pub mod models;
 pub mod placeholder;
 

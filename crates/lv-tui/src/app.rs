@@ -23,8 +23,8 @@ use crate::{
     overlay::{Overlay, OverlayAction},
     overlays::HelpOverlay,
     sections::{
-        Section, SectionOutcome, chat::ChatSection, models::ModelsSection,
-        placeholder::PlaceholderSection,
+        Section, SectionOutcome, chat::ChatSection, databases::DatabasesSection,
+        models::ModelsSection, placeholder::PlaceholderSection,
     },
     status_bar::{StatusBarView, draw_status_bar},
     widgets::sidebar::draw_sidebar,
@@ -93,7 +93,7 @@ struct AppState {
     active_section: Section,
     chat_section: ChatSection,
     models_section: ModelsSection,
-    databases_section: PlaceholderSection,
+    databases_section: DatabasesSection,
     index_section: PlaceholderSection,
     settings_section: PlaceholderSection,
     model_tier: ModelTier,
@@ -112,7 +112,7 @@ impl AppState {
             active_section: Section::Chat,
             chat_section: ChatSection::new(),
             models_section: ModelsSection::new(),
-            databases_section: PlaceholderSection::databases(),
+            databases_section: DatabasesSection::new(),
             index_section: PlaceholderSection::index(),
             settings_section: PlaceholderSection::settings(),
             model_tier: ModelTier::Fast,
@@ -245,8 +245,14 @@ pub async fn run_tui(
                 state.active_section = section;
                 // Refresh section-specific data on entry. Cheap operations;
                 // the backend replies with an event that updates the section.
-                if section == Section::Models {
-                    let _ = command_tx.send(AppCommand::Models).await;
+                match section {
+                    Section::Models => {
+                        let _ = command_tx.send(AppCommand::Models).await;
+                    }
+                    Section::Databases => {
+                        let _ = command_tx.send(AppCommand::Status).await;
+                    }
+                    _ => {}
                 }
                 continue;
             }
@@ -359,8 +365,8 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
                 content: format!("Switched to DB '{name}'."),
             });
         }
-        AppEvent::Status(_) => {
-            // Status is now shown ambiently in the top strip; no overlay in 3.0.
+        AppEvent::Status(snapshot) => {
+            state.databases_section.update(snapshot.databases.clone());
         }
         AppEvent::ModelsSnapshot(rows) => {
             state.models_section.update(rows);
@@ -380,8 +386,9 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
             state.warm_count = n;
             state.active_loading = active_loading;
         }
-        AppEvent::BrowseData { .. } => {
-            // Will be handled by the Databases section (Phase 3).
+        AppEvent::BrowseData { db, files, total_chunks } => {
+            use crate::overlays::BrowseOverlay;
+            state.overlay = Some(Box::new(BrowseOverlay::new(db, files, total_chunks)));
         }
     }
 }
