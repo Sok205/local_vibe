@@ -25,7 +25,7 @@ use crate::{
     input::{InputAction, InputBuffer},
     overlay::{Overlay, OverlayAction},
     overlays::{HelpOverlay, StatusOverlay},
-    status_bar::draw_status_bar,
+    status_bar::{draw_status_bar, StatusBarView},
 };
 
 pub enum AppEvent {
@@ -108,6 +108,8 @@ struct AppState {
     indexing: Option<IndexingProgress>,
     current_db: String,
     overlay: Option<Box<dyn Overlay>>,
+    warm_count: usize,
+    active_loading: bool,
 }
 
 impl AppState {
@@ -122,6 +124,8 @@ impl AppState {
             indexing: None,
             current_db: "default".to_string(),
             overlay: None,
+            warm_count: 0,
+            active_loading: false,
         }
     }
 }
@@ -161,11 +165,15 @@ pub async fn run_tui(
             draw_status_bar(
                 frame,
                 rows[0],
-                state.model_tier,
-                &state.model_name,
-                state.store_stats.as_ref(),
-                &state.current_db,
-                state.indexing.as_ref(),
+                StatusBarView {
+                    active_tier: state.model_tier,
+                    model_name: &state.model_name,
+                    stats: state.store_stats.as_ref(),
+                    current_db: &state.current_db,
+                    warm_count: state.warm_count,
+                    active_loading: state.active_loading,
+                    indexing: state.indexing.as_ref(),
+                },
             );
 
             // Main area: chat + optional context panel
@@ -188,7 +196,17 @@ pub async fn run_tui(
                 Span::styled("> ", Style::default().fg(Color::Yellow)),
                 Span::raw(input_text),
             ]))
-            .block(Block::default().borders(Borders::ALL));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title_top(
+                        Line::from(Span::styled(
+                            " /? for help ",
+                            Style::default().fg(Color::DarkGray),
+                        ))
+                        .right_aligned(),
+                    ),
+            );
             frame.render_widget(input_widget, rows[2]);
 
             // Position cursor inside input box
