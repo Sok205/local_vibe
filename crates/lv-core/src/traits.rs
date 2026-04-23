@@ -25,6 +25,13 @@ pub trait AppHost: Send + Sync {
     async fn list_dbs(&self) -> anyhow::Result<Vec<String>>;
     async fn current_db(&self) -> String;
     async fn runtime_status(&self) -> RuntimeStatus;
+
+    async fn load_model(&self, tier: ModelTier) -> anyhow::Result<()>;
+    async fn unload_model(&self, tier: ModelTier) -> anyhow::Result<()>;
+    async fn set_active_tier(&self, tier: ModelTier) -> anyhow::Result<()>;
+    async fn warm_tiers(&self) -> Vec<ModelTier>;
+    async fn active_tier(&self) -> ModelTier;
+    async fn is_embedding_warm(&self) -> bool;
 }
 
 #[async_trait]

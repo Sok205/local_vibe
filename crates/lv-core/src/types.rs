@@ -57,12 +57,23 @@ pub struct ModelInfo {
     pub tier: ModelTier,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ModelTier {
     Fast,
     Medium,
     Strong,
     Cloud,
+}
+
+impl ModelTier {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ModelTier::Fast => "fast",
+            ModelTier::Medium => "medium",
+            ModelTier::Strong => "strong",
+            ModelTier::Cloud => "cloud",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

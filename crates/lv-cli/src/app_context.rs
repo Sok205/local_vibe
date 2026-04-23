@@ -15,11 +15,10 @@ use lv_rag::store::LanceStore;
 
 pub const DEFAULT_DB_NAME: &str = "default";
 
-/// Lazy holder for every expensive component. Each field initializes on first
-/// access; a subcommand that does not touch embedding pays no embedding cost.
 pub struct AppContext {
     pub config: Config,
-    inference: OnceCell<Arc<dyn InferenceBackend>>,
+    inferences: RwLock<HashMap<ModelTier, Arc<dyn InferenceBackend>>>,
+    active_tier: RwLock<ModelTier>,
     embedding: OnceCell<Option<Arc<dyn EmbeddingBackend>>>,
     embed_dim: OnceCell<Option<usize>>,
     stores: RwLock<HashMap<String, Arc<dyn VectorStore>>>,
@@ -32,7 +31,8 @@ impl AppContext {
     pub fn new(config: Config) -> Self {
         Self {
             config,
-            inference: OnceCell::new(),
+            inferences: RwLock::new(HashMap::new()),
+            active_tier: RwLock::new(ModelTier::Medium),
             embedding: OnceCell::new(),
             embed_dim: OnceCell::new(),
             stores: RwLock::new(HashMap::new()),
@@ -41,11 +41,73 @@ impl AppContext {
         }
     }
 
-    pub async fn inference(&self) -> anyhow::Result<Arc<dyn InferenceBackend>> {
-        self.inference
-            .get_or_try_init(|| async { build_inference(&self.config).await })
+    /// Returns the active chat model, loading it lazily if cold.
+    pub async fn active_inference(&self) -> anyhow::Result<Arc<dyn InferenceBackend>> {
+        let tier = *self.active_tier.read().await;
+        self.ensure_model(tier).await
+    }
+
+    pub async fn active_tier(&self) -> ModelTier {
+        *self.active_tier.read().await
+    }
+
+    pub async fn warm_tiers(&self) -> Vec<ModelTier> {
+        let guard = self.inferences.read().await;
+        let mut v: Vec<ModelTier> = guard.keys().copied().collect();
+        v.sort();
+        v
+    }
+
+    /// Loads the given tier if cold. Idempotent if already warm.
+    pub async fn load_model(&self, tier: ModelTier) -> anyhow::Result<()> {
+        self.ensure_model(tier).await?;
+        Ok(())
+    }
+
+    pub async fn unload_model(&self, tier: ModelTier) -> anyhow::Result<()> {
+        let active = *self.active_tier.read().await;
+        if active == tier {
+            anyhow::bail!(
+                "cannot unload active tier '{}'; pick a different active tier first",
+                tier.as_str()
+            );
+        }
+        let mut guard = self.inferences.write().await;
+        guard.remove(&tier);
+        Ok(())
+    }
+
+    pub async fn set_active_tier(&self, tier: ModelTier) -> anyhow::Result<()> {
+        // Must be warm to activate. Caller should explicitly load first if desired.
+        let is_warm = {
+            let guard = self.inferences.read().await;
+            guard.contains_key(&tier)
+        };
+        if !is_warm {
+            anyhow::bail!(
+                "tier '{}' is not loaded; load it first",
+                tier.as_str()
+            );
+        }
+        *self.active_tier.write().await = tier;
+        Ok(())
+    }
+
+    async fn ensure_model(&self, tier: ModelTier) -> anyhow::Result<Arc<dyn InferenceBackend>> {
+        {
+            let guard = self.inferences.read().await;
+            if let Some(backend) = guard.get(&tier) {
+                return Ok(Arc::clone(backend));
+            }
+        }
+        let backend = build_inference_for(tier, &self.config)
             .await
-            .cloned()
+            .with_context(|| format!("failed to load tier {}", tier.as_str()))?;
+        let mut guard = self.inferences.write().await;
+        let entry = guard
+            .entry(tier)
+            .or_insert_with(|| Arc::clone(&backend));
+        Ok(Arc::clone(entry))
     }
 
     /// Returns `None` if no embedding model is configured — RAG is disabled.
@@ -54,6 +116,10 @@ impl AppContext {
             .get_or_try_init(|| async { build_embedding(&self.config).await })
             .await
             .cloned()
+    }
+
+    pub async fn is_embedding_warm(&self) -> bool {
+        matches!(self.embedding.get(), Some(Some(_)))
     }
 
     async fn ensure_dim(&self) -> anyhow::Result<usize> {
@@ -159,16 +225,13 @@ impl AppContext {
     }
 
     async fn peek_runtime_status(&self) -> RuntimeStatus {
-        let mut warm_models = Vec::new();
-        if self.inference.get().is_some() {
-            warm_models.push("medium".to_string());
-        }
-        if self
-            .embedding
-            .get()
-            .and_then(|opt| opt.as_ref())
-            .is_some()
-        {
+        let mut warm_models: Vec<String> = self
+            .warm_tiers()
+            .await
+            .into_iter()
+            .map(|t| t.as_str().to_string())
+            .collect();
+        if self.is_embedding_warm().await {
             warm_models.push("embedding".to_string());
         }
         let warm_dbs: Vec<String> = {
@@ -223,10 +286,55 @@ impl AppHost for AppContext {
     async fn runtime_status(&self) -> RuntimeStatus {
         self.peek_runtime_status().await
     }
+
+    async fn load_model(&self, tier: ModelTier) -> anyhow::Result<()> {
+        AppContext::load_model(self, tier).await
+    }
+
+    async fn unload_model(&self, tier: ModelTier) -> anyhow::Result<()> {
+        AppContext::unload_model(self, tier).await
+    }
+
+    async fn set_active_tier(&self, tier: ModelTier) -> anyhow::Result<()> {
+        AppContext::set_active_tier(self, tier).await
+    }
+
+    async fn warm_tiers(&self) -> Vec<ModelTier> {
+        AppContext::warm_tiers(self).await
+    }
+
+    async fn active_tier(&self) -> ModelTier {
+        AppContext::active_tier(self).await
+    }
+
+    async fn is_embedding_warm(&self) -> bool {
+        AppContext::is_embedding_warm(self).await
+    }
 }
 
-async fn build_inference(config: &Config) -> anyhow::Result<Arc<dyn InferenceBackend>> {
-    let m = &config.models.medium;
+fn model_config_for(config: &Config, tier: ModelTier) -> &lv_core::config::ModelConfig {
+    match tier {
+        ModelTier::Fast => &config.models.fast,
+        ModelTier::Medium => &config.models.medium,
+        ModelTier::Strong => &config.models.strong,
+        ModelTier::Cloud => &config.models.medium, // placeholder; cloud uses a separate config path
+    }
+}
+
+async fn build_inference_for(
+    tier: ModelTier,
+    config: &Config,
+) -> anyhow::Result<Arc<dyn InferenceBackend>> {
+    if matches!(tier, ModelTier::Cloud) {
+        anyhow::bail!("cloud tier loading is not yet wired up");
+    }
+    let m = model_config_for(config, tier);
+    let port = match tier {
+        ModelTier::Fast => 8081,
+        ModelTier::Medium => 8080,
+        ModelTier::Strong => 8082,
+        ModelTier::Cloud => 0,
+    };
     let backend: Arc<dyn InferenceBackend> = match m.backend.as_str() {
         "metal" => {
             let model_path = m
@@ -237,13 +345,9 @@ async fn build_inference(config: &Config) -> anyhow::Result<Arc<dyn InferenceBac
                 .tokenizer_path
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("tokenizer_path required for metal backend"))?;
-            Arc::new(MetalBackend::load(
-                model_path,
-                tokenizer_path,
-                ModelTier::Medium,
-            )?)
+            Arc::new(MetalBackend::load(model_path, tokenizer_path, tier)?)
         }
-        _ => Arc::new(MlxLmBackend::connect(&m.name, 8080, ModelTier::Medium)),
+        _ => Arc::new(MlxLmBackend::connect(&m.name, port, tier)),
     };
     Ok(backend)
 }
@@ -275,9 +379,13 @@ mod tests {
     use tempfile::tempdir;
 
     fn cfg_with_db_root(root: &std::path::Path) -> Config {
-        let mut cfg = Config::default();
-        cfg.rag.db_root = Some(root.to_path_buf());
-        cfg
+        Config {
+            rag: lv_core::config::RagConfig {
+                db_root: Some(root.to_path_buf()),
+                ..lv_core::config::RagConfig::default()
+            },
+            ..Config::default()
+        }
     }
 
     #[tokio::test]
@@ -309,5 +417,19 @@ mod tests {
     async fn list_dbs_errors_without_db_root() {
         let ctx = AppContext::new(Config::default());
         assert!(ctx.list_dbs().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn unload_refuses_active_tier() {
+        let ctx = AppContext::new(Config::default());
+        // Active starts at Medium — unloading it must fail (doesn't matter if loaded).
+        // We force a Medium entry so it's "loaded" from the context's perspective.
+        assert!(ctx.unload_model(ModelTier::Medium).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn set_active_tier_requires_warm() {
+        let ctx = AppContext::new(Config::default());
+        assert!(ctx.set_active_tier(ModelTier::Fast).await.is_err());
     }
 }

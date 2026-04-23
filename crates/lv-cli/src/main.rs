@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use lv_core::status::{collect_declared_status, Readiness, StatusSnapshot};
 use lv_core::traits::{AppHost, CodeGraph};
 use lv_core::types::{
-    CompletionRequest, Message, Role, SearchFilter, SearchResult,
+    CompletionRequest, Message, ModelTier, Role, SearchFilter, SearchResult,
 };
 use lv_core::Config;
 use lv_rag::query::QueryEngine;
@@ -189,6 +189,84 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
                 AppCommand::Help => {
                     // Help is handled entirely inside the TUI; never reaches the channel.
                 }
+                AppCommand::Models => {
+                    let rows = build_model_rows(&handler_ctx).await;
+                    let _ = handler_event_tx.send(AppEvent::ModelsSnapshot(rows)).await;
+                }
+                AppCommand::LoadAndActivate(tier) => {
+                    let _ = handler_event_tx.send(AppEvent::ModelLoading(tier)).await;
+                    emit_models_snapshot(&handler_ctx, &handler_event_tx).await;
+                    match handler_ctx.load_model(tier).await {
+                        Ok(()) => {
+                            let _ = handler_event_tx.send(AppEvent::ModelLoaded(tier)).await;
+                            if let Err(e) = handler_ctx.set_active_tier(tier).await {
+                                let _ = handler_event_tx
+                                    .send(AppEvent::Error(e.to_string()))
+                                    .await;
+                            } else {
+                                let name = active_tier_display(&handler_ctx, tier);
+                                let _ = handler_event_tx
+                                    .send(AppEvent::ActiveTierChanged(tier, name))
+                                    .await;
+                            }
+                            emit_models_snapshot(&handler_ctx, &handler_event_tx).await;
+                            emit_warm_count(&handler_ctx, &handler_event_tx).await;
+                        }
+                        Err(e) => {
+                            let _ = handler_event_tx
+                                .send(AppEvent::ModelLoadFailed(tier, e.to_string()))
+                                .await;
+                            emit_models_snapshot(&handler_ctx, &handler_event_tx).await;
+                            emit_warm_count(&handler_ctx, &handler_event_tx).await;
+                        }
+                    }
+                }
+                AppCommand::LoadModel(tier) => {
+                    let _ = handler_event_tx.send(AppEvent::ModelLoading(tier)).await;
+                    emit_models_snapshot(&handler_ctx, &handler_event_tx).await;
+                    match handler_ctx.load_model(tier).await {
+                        Ok(()) => {
+                            let _ = handler_event_tx.send(AppEvent::ModelLoaded(tier)).await;
+                        }
+                        Err(e) => {
+                            let _ = handler_event_tx
+                                .send(AppEvent::ModelLoadFailed(tier, e.to_string()))
+                                .await;
+                        }
+                    }
+                    emit_models_snapshot(&handler_ctx, &handler_event_tx).await;
+                    emit_warm_count(&handler_ctx, &handler_event_tx).await;
+                }
+                AppCommand::UnloadModel(tier) => {
+                    match handler_ctx.unload_model(tier).await {
+                        Ok(()) => {
+                            let _ = handler_event_tx.send(AppEvent::ModelUnloaded(tier)).await;
+                        }
+                        Err(e) => {
+                            let _ = handler_event_tx
+                                .send(AppEvent::Error(e.to_string()))
+                                .await;
+                        }
+                    }
+                    emit_models_snapshot(&handler_ctx, &handler_event_tx).await;
+                    emit_warm_count(&handler_ctx, &handler_event_tx).await;
+                }
+                AppCommand::SetActiveTier(tier) => {
+                    match handler_ctx.set_active_tier(tier).await {
+                        Ok(()) => {
+                            let name = active_tier_display(&handler_ctx, tier);
+                            let _ = handler_event_tx
+                                .send(AppEvent::ActiveTierChanged(tier, name))
+                                .await;
+                        }
+                        Err(e) => {
+                            let _ = handler_event_tx
+                                .send(AppEvent::Error(e.to_string()))
+                                .await;
+                        }
+                    }
+                    emit_models_snapshot(&handler_ctx, &handler_event_tx).await;
+                }
                 AppCommand::Quit => break,
             }
         }
@@ -255,7 +333,7 @@ async fn run_ask(config: Config, question: &str) -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    let backend = ctx.inference().await?;
+    let backend = ctx.active_inference().await?;
     let mut stream = backend.complete(req).await.context("Completion failed")?;
 
     use std::io::Write;
@@ -355,7 +433,7 @@ async fn handle_ask(
         ..Default::default()
     };
 
-    let backend = match ctx.inference().await {
+    let backend = match ctx.active_inference().await {
         Ok(b) => b,
         Err(e) => {
             let _ = event_tx.send(AppEvent::Error(e.to_string())).await;
@@ -675,5 +753,69 @@ fn print_status_human(s: &StatusSnapshot) {
         println!("  pid: {}", r.pid);
         println!("  warm models: {warm_models}");
         println!("  warm dbs:    {warm_dbs}");
+    }
+}
+
+async fn build_model_rows(ctx: &Arc<AppContext>) -> Vec<lv_tui::overlays::ModelRow> {
+    use lv_tui::overlays::{LoadState, ModelRow, SlotId};
+
+    let warm: std::collections::HashSet<ModelTier> =
+        ctx.warm_tiers().await.into_iter().collect();
+    let active = ctx.active_tier().await;
+    let cfg = &ctx.config;
+
+    let mut rows: Vec<ModelRow> = Vec::new();
+    for (tier, slot) in [
+        (ModelTier::Fast, &cfg.models.fast),
+        (ModelTier::Medium, &cfg.models.medium),
+        (ModelTier::Strong, &cfg.models.strong),
+    ] {
+        rows.push(ModelRow {
+            slot: SlotId::Chat(tier),
+            name: slot.name.clone(),
+            backend: slot.backend.clone(),
+            state: if warm.contains(&tier) { LoadState::Warm } else { LoadState::Cold },
+            active: tier == active,
+        });
+    }
+    if let Some(emb) = cfg.models.embedding.as_ref() {
+        rows.push(ModelRow {
+            slot: SlotId::Embedding,
+            name: emb.name.clone(),
+            backend: emb.backend.clone(),
+            state: if ctx.is_embedding_warm().await { LoadState::Warm } else { LoadState::Cold },
+            active: false,
+        });
+    }
+    rows
+}
+
+async fn emit_models_snapshot(
+    ctx: &Arc<AppContext>,
+    event_tx: &mpsc::Sender<AppEvent>,
+) {
+    let rows = build_model_rows(ctx).await;
+    let _ = event_tx.send(AppEvent::ModelsSnapshot(rows)).await;
+}
+
+async fn emit_warm_count(ctx: &Arc<AppContext>, event_tx: &mpsc::Sender<AppEvent>) {
+    let warm = ctx.warm_tiers().await;
+    let emb_warm = ctx.is_embedding_warm().await;
+    let total = warm.len() + emb_warm as usize;
+    let _ = event_tx.send(AppEvent::WarmCountChanged(total, false)).await;
+}
+
+fn active_tier_display(ctx: &Arc<AppContext>, tier: ModelTier) -> String {
+    let cfg = &ctx.config;
+    match tier {
+        ModelTier::Fast => cfg.models.fast.name.clone(),
+        ModelTier::Medium => cfg.models.medium.name.clone(),
+        ModelTier::Strong => cfg.models.strong.name.clone(),
+        ModelTier::Cloud => cfg
+            .models
+            .cloud
+            .as_ref()
+            .map(|c| c.model.clone())
+            .unwrap_or_else(|| "cloud".to_string()),
     }
 }

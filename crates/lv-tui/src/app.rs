@@ -41,6 +41,13 @@ pub enum AppEvent {
     DbListing(Vec<String>),
     DbSwitched(String),
     Status(Box<StatusSnapshot>),
+    ModelsSnapshot(Vec<crate::overlays::ModelRow>),
+    ModelLoading(ModelTier),
+    ModelLoaded(ModelTier),
+    ModelLoadFailed(ModelTier, String),
+    ModelUnloaded(ModelTier),
+    ActiveTierChanged(ModelTier, String),
+    WarmCountChanged(usize, bool),
 }
 
 pub enum AppCommand {
@@ -49,6 +56,11 @@ pub enum AppCommand {
     ListDbs,
     SwitchDb(String),
     Status,
+    Models,
+    LoadAndActivate(ModelTier),
+    LoadModel(ModelTier),
+    UnloadModel(ModelTier),
+    SetActiveTier(ModelTier),
     Help,
     Quit,
 }
@@ -74,6 +86,9 @@ pub fn parse_input(line: &str) -> AppCommand {
     }
     if trimmed == "/status" {
         return AppCommand::Status;
+    }
+    if trimmed == "/models" {
+        return AppCommand::Models;
     }
     if trimmed == "/help" || trimmed == "/?" {
         return AppCommand::Help;
@@ -335,6 +350,36 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
         AppEvent::Status(snapshot) => {
             state.overlay = Some(Box::new(StatusOverlay::new(*snapshot)));
         }
+        AppEvent::ModelsSnapshot(rows) => {
+            use crate::overlays::ModelsOverlay;
+            state.overlay = Some(Box::new(ModelsOverlay::new(rows)));
+        }
+        AppEvent::ModelLoading(_) | AppEvent::ModelLoaded(_) | AppEvent::ModelUnloaded(_) => {
+            // Handled via follow-up ModelsSnapshot / WarmCountChanged events.
+        }
+        AppEvent::ModelLoadFailed(tier, err) => {
+            state.chat.push_message(Message {
+                role: Role::System,
+                content: format!("failed to load {}: {err}", tier_label(tier)),
+            });
+        }
+        AppEvent::ActiveTierChanged(tier, name) => {
+            state.model_tier = tier;
+            state.model_name = name;
+        }
+        AppEvent::WarmCountChanged(n, active_loading) => {
+            state.warm_count = n;
+            state.active_loading = active_loading;
+        }
+    }
+}
+
+fn tier_label(t: ModelTier) -> &'static str {
+    match t {
+        ModelTier::Fast => "fast",
+        ModelTier::Medium => "medium",
+        ModelTier::Strong => "strong",
+        ModelTier::Cloud => "cloud",
     }
 }
 
