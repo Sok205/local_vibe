@@ -1,3 +1,4 @@
+use crossterm::event::{KeyCode, KeyEvent};
 use lv_core::status::{Readiness, StatusSnapshot};
 use ratatui::{
     Frame,
@@ -7,16 +8,40 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
-pub fn draw_status_overlay(frame: &mut Frame, area: Rect, snapshot: &StatusSnapshot) {
+use crate::overlay::{centered, Overlay, OverlayAction};
+
+pub struct StatusOverlay {
+    snapshot: StatusSnapshot,
+}
+
+impl StatusOverlay {
+    pub fn new(snapshot: StatusSnapshot) -> Self {
+        Self { snapshot }
+    }
+}
+
+impl Overlay for StatusOverlay {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+        draw_status_overlay(frame, area, &self.snapshot);
+    }
+
+    fn handle_key(&mut self, key: KeyEvent) -> OverlayAction {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => OverlayAction::Dismiss,
+            _ => OverlayAction::None,
+        }
+    }
+}
+
+fn draw_status_overlay(frame: &mut Frame, area: Rect, snapshot: &StatusSnapshot) {
     let outer = centered(area, 70, 80);
 
     frame.render_widget(
-        Paragraph::new("")
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Status — press Esc to close "),
-            ),
+        Paragraph::new("").block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Status — press Esc to close "),
+        ),
         outer,
     );
 
@@ -90,11 +115,8 @@ fn draw_models_block(frame: &mut Frame, area: Rect, s: &StatusSnapshot) {
         ]));
     }
     frame.render_widget(
-        Paragraph::new(lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Models "),
-        ),
+        Paragraph::new(lines)
+            .block(Block::default().borders(Borders::ALL).title(" Models ")),
         area,
     );
 }
@@ -145,11 +167,7 @@ fn draw_databases_block(frame: &mut Frame, area: Rect, s: &StatusSnapshot) {
     frame.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Databases "),
-            ),
+            .block(Block::default().borders(Borders::ALL).title(" Databases ")),
         area,
     );
 }
@@ -184,24 +202,4 @@ fn draw_runtime_block(frame: &mut Frame, area: Rect, s: &StatusSnapshot) {
             .block(Block::default().borders(Borders::ALL).title(" Runtime ")),
         area,
     );
-}
-
-fn centered(area: Rect, width_pct: u16, height_pct: u16) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - height_pct) / 2),
-            Constraint::Percentage(height_pct),
-            Constraint::Percentage((100 - height_pct) / 2),
-        ])
-        .split(area);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - width_pct) / 2),
-            Constraint::Percentage(width_pct),
-            Constraint::Percentage((100 - width_pct) / 2),
-        ])
-        .split(popup_layout[1])[1]
 }

@@ -1,3 +1,4 @@
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -6,6 +7,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
+use crate::overlay::{centered, Overlay, OverlayAction};
+
 struct Entry {
     command: &'static str,
     description: &'static str,
@@ -13,23 +16,47 @@ struct Entry {
 
 const COMMANDS: &[Entry] = &[
     Entry { command: "/help, /?",        description: "show this help" },
-    Entry { command: "/status",          description: "full snapshot: models, DBs, runtime state" },
+    Entry { command: "/status",          description: "models, DBs, runtime — Enter on a DB drills into browse" },
+    Entry { command: "/models",          description: "load / unload / activate models" },
+    Entry { command: "/browse [db]",     description: "browse files inside a DB" },
     Entry { command: "/dbs",             description: "list indexed DBs" },
     Entry { command: "/db <name>",       description: "switch current DB" },
-    Entry { command: "/index <path> [name]", description: "index a directory (optional DB name)" },
+    Entry { command: "/index [path]",    description: "index a directory (no args = picker)" },
     Entry { command: "/quit",            description: "exit" },
 ];
 
 const KEYS: &[Entry] = &[
-    Entry { command: "Enter",            description: "submit input" },
-    Entry { command: "Up / Down",        description: "scroll chat" },
-    Entry { command: "Tab",              description: "toggle context panel" },
+    Entry { command: "Enter",            description: "submit input (or activate in overlays)" },
+    Entry { command: "Up / Down, j / k", description: "scroll chat / navigate list" },
+    Entry { command: "/",                description: "start fuzzy filter inside a list" },
+    Entry { command: "Tab",              description: "toggle context panel (or complete /index path)" },
     Entry { command: "Ctrl+C, Ctrl+Q",   description: "quit" },
-    Entry { command: "Esc / q",          description: "dismiss overlay (help / status)" },
+    Entry { command: "Esc / q",          description: "dismiss overlay" },
 ];
 
-pub fn draw_help_overlay(frame: &mut Frame, area: Rect) {
-    let outer = centered(area, 60, 60);
+pub struct HelpOverlay;
+
+impl Default for HelpOverlay {
+    fn default() -> Self {
+        Self
+    }
+}
+
+impl Overlay for HelpOverlay {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+        draw_help_overlay(frame, area);
+    }
+
+    fn handle_key(&mut self, key: KeyEvent) -> OverlayAction {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => OverlayAction::Dismiss,
+            _ => OverlayAction::None,
+        }
+    }
+}
+
+fn draw_help_overlay(frame: &mut Frame, area: Rect) {
+    let outer = centered(area, 70, 70);
 
     frame.render_widget(
         Paragraph::new("").block(
@@ -61,12 +88,7 @@ pub fn draw_help_overlay(frame: &mut Frame, area: Rect) {
 }
 
 fn draw_section(frame: &mut Frame, area: Rect, title: &str, entries: &[Entry]) {
-    let col_width = entries
-        .iter()
-        .map(|e| e.command.len())
-        .max()
-        .unwrap_or(0)
-        + 2;
+    let col_width = entries.iter().map(|e| e.command.len()).max().unwrap_or(0) + 2;
 
     let lines: Vec<Line> = entries
         .iter()
@@ -84,27 +106,8 @@ fn draw_section(frame: &mut Frame, area: Rect, title: &str, entries: &[Entry]) {
         .collect();
 
     frame.render_widget(
-        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(title.to_string())),
+        Paragraph::new(lines)
+            .block(Block::default().borders(Borders::ALL).title(title.to_string())),
         area,
     );
-}
-
-fn centered(area: Rect, width_pct: u16, height_pct: u16) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - height_pct) / 2),
-            Constraint::Percentage(height_pct),
-            Constraint::Percentage((100 - height_pct) / 2),
-        ])
-        .split(area);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - width_pct) / 2),
-            Constraint::Percentage(width_pct),
-            Constraint::Percentage((100 - width_pct) / 2),
-        ])
-        .split(popup_layout[1])[1]
 }

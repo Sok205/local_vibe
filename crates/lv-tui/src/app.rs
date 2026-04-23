@@ -2,7 +2,7 @@ use std::io;
 use std::time::Duration;
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -22,10 +22,10 @@ use tracing::error;
 use crate::{
     chat_view::ChatView,
     context_panel::ContextPanel,
-    help_view::draw_help_overlay,
     input::{InputAction, InputBuffer},
+    overlay::{Overlay, OverlayAction},
+    overlays::{HelpOverlay, StatusOverlay},
     status_bar::draw_status_bar,
-    status_view::draw_status_overlay,
 };
 
 pub enum AppEvent {
@@ -107,8 +107,7 @@ struct AppState {
     store_stats: Option<StoreStats>,
     indexing: Option<IndexingProgress>,
     current_db: String,
-    status_overlay: Option<StatusSnapshot>,
-    help_overlay: bool,
+    overlay: Option<Box<dyn Overlay>>,
 }
 
 impl AppState {
@@ -122,8 +121,7 @@ impl AppState {
             store_stats: None,
             indexing: None,
             current_db: "default".to_string(),
-            status_overlay: None,
-            help_overlay: false,
+            overlay: None,
         }
     }
 }
@@ -198,24 +196,20 @@ pub async fn run_tui(
             let cursor_y = rows[2].y + 1;
             frame.set_cursor_position((cursor_x, cursor_y));
 
-            // Overlays paint last so they sit on top. Help wins if both are set.
-            if state.help_overlay {
-                draw_help_overlay(frame, size);
-            } else if let Some(snap) = &state.status_overlay {
-                draw_status_overlay(frame, size, snap);
+            if let Some(overlay) = state.overlay.as_mut() {
+                overlay.draw(frame, size);
             }
         })?;
 
         if event::poll(poll_interval)? && let Event::Key(key) = event::read()? {
-            if state.help_overlay {
-                if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
-                    state.help_overlay = false;
-                }
-                continue;
-            }
-            if state.status_overlay.is_some() {
-                if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
-                    state.status_overlay = None;
+            if let Some(overlay) = state.overlay.as_mut() {
+                match overlay.handle_key(key) {
+                    OverlayAction::None => {}
+                    OverlayAction::Dismiss => state.overlay = None,
+                    OverlayAction::RunCommand(cmd) => {
+                        state.overlay = None;
+                        let _ = command_tx.send(cmd).await;
+                    }
                 }
                 continue;
             }
@@ -233,7 +227,7 @@ pub async fn run_tui(
                             break;
                         }
                         AppCommand::Help => {
-                            state.help_overlay = true;
+                            state.overlay = Some(Box::new(HelpOverlay));
                             continue;
                         }
                         AppCommand::Ask { query } => {
@@ -321,7 +315,7 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
             });
         }
         AppEvent::Status(snapshot) => {
-            state.status_overlay = Some(*snapshot);
+            state.overlay = Some(Box::new(StatusOverlay::new(*snapshot)));
         }
     }
 }
