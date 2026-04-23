@@ -2,7 +2,7 @@ use std::io;
 use std::time::Duration;
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -11,23 +11,20 @@ use lv_core::types::{FileSummary, Message, ModelTier, Role, SearchResult, StoreS
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 use tokio::sync::mpsc;
 use tracing::error;
 
 use crate::{
-    chat_view::ChatView,
-    commands::is_palette_prefix,
-    context_panel::ContextPanel,
-    input::{InputAction, InputBuffer},
     overlay::{Overlay, OverlayAction},
-    overlays::{HelpOverlay, StatusOverlay},
-    status_bar::{draw_status_bar, StatusBarView},
-    widgets::palette::CommandPalette,
+    overlays::HelpOverlay,
+    sections::{Section, SectionOutcome, chat::ChatSection, placeholder::PlaceholderSection},
+    status_bar::{StatusBarView, draw_status_bar},
+    widgets::sidebar::draw_sidebar,
 };
 
 pub enum AppEvent {
@@ -70,51 +67,13 @@ pub enum AppCommand {
     Quit,
 }
 
-/// Parse one submitted input line into an `AppCommand`.
-///
-/// Slash commands:
-/// - `/quit`                — `Quit`
-/// - `/dbs`                 — `ListDbs`
-/// - `/db <name>`           — `SwitchDb`
-/// - `/index <path> [name]` — `Index { path, db }`
-/// - `/status`              — `Status`
-/// - `/help`, `/?`          — `Help`
-///
-/// Anything else becomes `Ask`.
+/// Parse one submitted chat line. In TUI 3.0 the slash palette is gone — the
+/// only command recognised at the prompt is `/quit`; anything else is asked
+/// of the model. Non-Chat actions live inside their sections.
 pub fn parse_input(line: &str) -> AppCommand {
     let trimmed = line.trim();
     if trimmed == "/quit" {
         return AppCommand::Quit;
-    }
-    if trimmed == "/dbs" {
-        return AppCommand::ListDbs;
-    }
-    if trimmed == "/status" {
-        return AppCommand::Status;
-    }
-    if trimmed == "/models" {
-        return AppCommand::Models;
-    }
-    if trimmed == "/browse" {
-        return AppCommand::Browse(String::new());
-    }
-    if let Some(rest) = trimmed.strip_prefix("/browse ") {
-        return AppCommand::Browse(rest.trim().to_string());
-    }
-    if trimmed == "/help" || trimmed == "/?" {
-        return AppCommand::Help;
-    }
-    if let Some(rest) = trimmed.strip_prefix("/db ") {
-        return AppCommand::SwitchDb(rest.trim().to_string());
-    }
-    if trimmed == "/index" {
-        return AppCommand::OpenPicker;
-    }
-    if let Some(rest) = trimmed.strip_prefix("/index ") {
-        let mut parts = rest.split_whitespace();
-        let path = parts.next().unwrap_or("").to_string();
-        let db = parts.next().map(|s| s.to_string());
-        return AppCommand::Index { path, db };
     }
     AppCommand::Ask {
         query: line.to_string(),
@@ -128,9 +87,12 @@ pub struct IndexingProgress {
 }
 
 struct AppState {
-    chat: ChatView,
-    context: ContextPanel,
-    input: InputBuffer,
+    active_section: Section,
+    chat_section: ChatSection,
+    models_section: PlaceholderSection,
+    databases_section: PlaceholderSection,
+    index_section: PlaceholderSection,
+    settings_section: PlaceholderSection,
     model_tier: ModelTier,
     model_name: String,
     store_stats: Option<StoreStats>,
@@ -139,15 +101,17 @@ struct AppState {
     overlay: Option<Box<dyn Overlay>>,
     warm_count: usize,
     active_loading: bool,
-    palette: CommandPalette,
 }
 
 impl AppState {
     fn new() -> Self {
         Self {
-            chat: ChatView::new(),
-            context: ContextPanel::new(),
-            input: InputBuffer::new(),
+            active_section: Section::Chat,
+            chat_section: ChatSection::new(),
+            models_section: PlaceholderSection::models(),
+            databases_section: PlaceholderSection::databases(),
+            index_section: PlaceholderSection::index(),
+            settings_section: PlaceholderSection::settings(),
             model_tier: ModelTier::Fast,
             model_name: "unknown".to_string(),
             store_stats: None,
@@ -156,7 +120,36 @@ impl AppState {
             overlay: None,
             warm_count: 0,
             active_loading: false,
-            palette: CommandPalette::new(),
+        }
+    }
+
+    fn draw_section(&self, frame: &mut ratatui::Frame, area: Rect) {
+        match self.active_section {
+            Section::Chat => self.chat_section.draw(frame, area),
+            Section::Models => self.models_section.draw(frame, area),
+            Section::Databases => self.databases_section.draw(frame, area),
+            Section::Index => self.index_section.draw(frame, area),
+            Section::Settings => self.settings_section.draw(frame, area),
+        }
+    }
+
+    fn section_keyhints(&self) -> &'static str {
+        match self.active_section {
+            Section::Chat => self.chat_section.keyhints(),
+            Section::Models => self.models_section.keyhints(),
+            Section::Databases => self.databases_section.keyhints(),
+            Section::Index => self.index_section.keyhints(),
+            Section::Settings => self.settings_section.keyhints(),
+        }
+    }
+
+    fn dispatch_key(&mut self, key: crossterm::event::KeyEvent) -> SectionOutcome {
+        match self.active_section {
+            Section::Chat => self.chat_section.handle_key(key),
+            Section::Models => self.models_section.handle_key(key),
+            Section::Databases => self.databases_section.handle_key(key),
+            Section::Index => self.index_section.handle_key(key),
+            Section::Settings => self.settings_section.handle_key(key),
         }
     }
 }
@@ -175,24 +168,21 @@ pub async fn run_tui(
     let poll_interval = Duration::from_millis(50);
 
     loop {
-        // Drain all pending backend events without blocking
         while let Ok(ev) = event_rx.try_recv() {
             handle_app_event(ev, &mut state);
         }
 
         terminal.draw(|frame| {
             let size = frame.area();
-
             let rows = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(1),
                     Constraint::Min(0),
-                    Constraint::Length(3),
+                    Constraint::Length(1),
                 ])
                 .split(size);
 
-            // Status bar
             draw_status_bar(
                 frame,
                 rows[0],
@@ -207,49 +197,15 @@ pub async fn run_tui(
                 },
             );
 
-            // Main area: chat + optional context panel
-            let main_area = rows[1];
-            if state.context.visible {
-                let cols = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-                    .split(main_area);
+            let main_cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Length(16), Constraint::Min(0)])
+                .split(rows[1]);
 
-                state.chat.draw(frame, cols[0]);
-                state.context.draw(frame, cols[1]);
-            } else {
-                state.chat.draw(frame, main_area);
-            }
+            draw_sidebar(frame, main_cols[0], state.active_section);
+            state.draw_section(frame, main_cols[1]);
 
-            // Input area
-            let input_text: String = state.input.as_str();
-            let input_widget = Paragraph::new(Line::from(vec![
-                Span::styled("> ", Style::default().fg(Color::Yellow)),
-                Span::raw(input_text),
-            ]))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title_top(
-                        Line::from(Span::styled(
-                            " /? for help ",
-                            Style::default().fg(Color::DarkGray),
-                        ))
-                        .right_aligned(),
-                    ),
-            );
-            frame.render_widget(input_widget, rows[2]);
-
-            // Position cursor inside input box
-            let cursor_x = rows[2].x + 1 + 2 + state.input.cursor as u16;
-            let cursor_y = rows[2].y + 1;
-            frame.set_cursor_position((cursor_x, cursor_y));
-
-            // Command palette floats above the input when in palette mode.
-            let current_input = state.input.as_str();
-            if state.palette.visible(&current_input) && state.overlay.is_none() {
-                state.palette.draw(frame, rows[2], &current_input);
-            }
+            draw_hint_line(frame, rows[2], state.section_keyhints());
 
             if let Some(overlay) = state.overlay.as_mut() {
                 overlay.draw(frame, size);
@@ -257,6 +213,7 @@ pub async fn run_tui(
         })?;
 
         if event::poll(poll_interval)? && let Event::Key(key) = event::read()? {
+            // Overlay takes priority.
             if let Some(overlay) = state.overlay.as_mut() {
                 match overlay.handle_key(key) {
                     OverlayAction::None => {}
@@ -268,111 +225,37 @@ pub async fn run_tui(
                 }
                 continue;
             }
-            // Tab completion on /index paths, before InputBuffer sees it.
-            if matches!(key.code, KeyCode::Tab) {
-                let current = state.input.as_str();
-                if current.starts_with("/index ")
-                    && let Some(completed) = crate::input_complete::complete_index_line(&current)
-                {
-                    state.input.set_from(&completed);
-                    continue;
-                }
+
+            // Global quit.
+            if matches!(key.modifiers, KeyModifiers::CONTROL)
+                && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('q'))
+            {
+                let _ = command_tx.send(AppCommand::Quit).await;
+                break;
             }
 
-            // Command palette: intercepts nav + Enter while the input is a
-            // slash-prefix with no whitespace. Any other key flows through to
-            // the input buffer as normal.
+            // Global: Ctrl+1..5 jumps section.
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                && let KeyCode::Char(c) = key.code
+                && let Some(section) = Section::from_digit(c)
             {
-                let current = state.input.as_str();
-                if is_palette_prefix(&current) {
-                    match key.code {
-                        KeyCode::Up => {
-                            state.palette.move_up(&current);
-                            continue;
-                        }
-                        KeyCode::Down | KeyCode::Tab => {
-                            state.palette.move_down(&current);
-                            continue;
-                        }
-                        KeyCode::Esc => {
-                            state.input.clear();
-                            state.palette.reset_selection();
-                            continue;
-                        }
-                        KeyCode::Enter => {
-                            if let Some(spec) = state.palette.selected_spec(&current) {
-                                if spec.takes_args {
-                                    state.input.set_from(&format!("{} ", spec.name));
-                                    state.palette.reset_selection();
-                                    continue;
-                                }
-                                // No-arg command: run via normal submit path.
-                                let cmd = parse_input(spec.name);
-                                state.input.clear();
-                                state.palette.reset_selection();
-                                match &cmd {
-                                    AppCommand::Quit => {
-                                        let _ = command_tx.send(AppCommand::Quit).await;
-                                        break;
-                                    }
-                                    AppCommand::Help => {
-                                        state.overlay = Some(Box::new(HelpOverlay));
-                                        continue;
-                                    }
-                                    AppCommand::OpenPicker => {
-                                        let start = std::env::current_dir()
-                                            .unwrap_or_else(|_| std::path::PathBuf::from("."));
-                                        match crate::overlays::PickerOverlay::new(&start) {
-                                            Ok(o) => state.overlay = Some(Box::new(o)),
-                                            Err(e) => state.chat.push_message(Message {
-                                                role: Role::System,
-                                                content: format!("picker: {e}"),
-                                            }),
-                                        }
-                                        continue;
-                                    }
-                                    _ => {}
-                                }
-                                let _ = command_tx.send(cmd).await;
-                                continue;
-                            }
-                            // No matches: fall through so Enter submits the raw text.
-                        }
-                        _ => {}
-                    }
-                }
+                state.active_section = section;
+                continue;
             }
-            let action = state.input.handle_key(key);
-            match action {
-                InputAction::Quit => {
-                    let _ = command_tx.send(AppCommand::Quit).await;
-                    break;
-                }
-                InputAction::Submit(text) => {
+
+            // Dispatch to active section.
+            let outcome = state.dispatch_key(key);
+            match outcome {
+                SectionOutcome::Consumed => {}
+                SectionOutcome::Submit(text) => {
                     let cmd = parse_input(&text);
                     match &cmd {
                         AppCommand::Quit => {
                             let _ = command_tx.send(AppCommand::Quit).await;
                             break;
                         }
-                        AppCommand::Help => {
-                            state.overlay = Some(Box::new(HelpOverlay));
-                            continue;
-                        }
-                        AppCommand::OpenPicker => {
-                            let start = std::env::current_dir()
-                                .unwrap_or_else(|_| std::path::PathBuf::from("."));
-                            match crate::overlays::PickerOverlay::new(&start) {
-                                Ok(o) => state.overlay = Some(Box::new(o)),
-                                Err(e) => state.chat.push_message(Message {
-                                    role: Role::System,
-                                    content: format!("picker: {e}"),
-                                }),
-                            }
-                            continue;
-                        }
                         AppCommand::Ask { query } => {
-                            state.chat.push_message(Message {
+                            state.chat_section.chat.push_message(Message {
                                 role: Role::User,
                                 content: query.clone(),
                             });
@@ -381,10 +264,15 @@ pub async fn run_tui(
                     }
                     let _ = command_tx.send(cmd).await;
                 }
-                InputAction::ScrollUp => state.chat.scroll_up(),
-                InputAction::ScrollDown => state.chat.scroll_down(),
-                InputAction::ToggleContext => state.context.toggle(),
-                InputAction::None => {}
+                SectionOutcome::RunCommand(cmd) => {
+                    let _ = command_tx.send(cmd).await;
+                }
+                SectionOutcome::Unhandled => {
+                    // Global fallbacks for keys the section didn't use.
+                    if matches!(key.code, KeyCode::Char('?')) {
+                        state.overlay = Some(Box::new(HelpOverlay));
+                    }
+                }
             }
         }
     }
@@ -399,19 +287,27 @@ pub async fn run_tui(
     Ok(())
 }
 
+fn draw_hint_line(frame: &mut ratatui::Frame, area: Rect, hints: &str) {
+    let widget = Paragraph::new(Line::from(vec![
+        Span::styled(" ", Style::default()),
+        Span::styled(hints, Style::default().fg(Color::DarkGray)),
+    ]));
+    frame.render_widget(widget, area);
+}
+
 fn handle_app_event(event: AppEvent, state: &mut AppState) {
     match event {
         AppEvent::StreamToken(token) => {
-            state.chat.push_token(&token);
+            state.chat_section.chat.push_token(&token);
         }
         AppEvent::StreamDone => {
-            state.chat.finish_stream();
+            state.chat_section.chat.finish_stream();
         }
         AppEvent::SearchResults(results) => {
-            state.context.search_results = results;
+            state.chat_section.context.search_results = results;
         }
         AppEvent::RepoMap(map) => {
-            state.context.repo_map = Some(map);
+            state.chat_section.context.repo_map = Some(map);
         }
         AppEvent::ModelChanged(tier, name) => {
             state.model_tier = tier;
@@ -422,7 +318,7 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
         }
         AppEvent::Error(msg) => {
             error!("TUI received error: {msg}");
-            state.chat.push_message(Message {
+            state.chat_section.chat.push_message(Message {
                 role: Role::System,
                 content: format!("Error: {msg}"),
             });
@@ -432,41 +328,38 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
         }
         AppEvent::IndexDone { indexed, skipped, failed } => {
             state.indexing = None;
-            state.chat.push_message(Message {
+            state.chat_section.chat.push_message(Message {
                 role: Role::System,
                 content: format!("Indexed {indexed}, skipped {skipped}, failed {failed}."),
             });
         }
         AppEvent::DbListing(names) => {
             let list = if names.is_empty() {
-                "(no DBs — index one with `/index <path> <name>`)".to_string()
+                "(no DBs — index one from the CLI: `lv index <path> <name>`)".to_string()
             } else {
                 names.join(", ")
             };
-            state.chat.push_message(Message {
+            state.chat_section.chat.push_message(Message {
                 role: Role::System,
                 content: format!("DBs: {list}"),
             });
         }
         AppEvent::DbSwitched(name) => {
             state.current_db = name.clone();
-            state.chat.push_message(Message {
+            state.chat_section.chat.push_message(Message {
                 role: Role::System,
                 content: format!("Switched to DB '{name}'."),
             });
         }
-        AppEvent::Status(snapshot) => {
-            state.overlay = Some(Box::new(StatusOverlay::new(*snapshot)));
+        AppEvent::Status(_) => {
+            // Status is now shown ambiently in the top strip; no overlay in 3.0.
         }
-        AppEvent::ModelsSnapshot(rows) => {
-            use crate::overlays::ModelsOverlay;
-            state.overlay = Some(Box::new(ModelsOverlay::new(rows)));
+        AppEvent::ModelsSnapshot(_) => {
+            // Handled by the upcoming Models section (Phase 2).
         }
-        AppEvent::ModelLoading(_) | AppEvent::ModelLoaded(_) | AppEvent::ModelUnloaded(_) => {
-            // Handled via follow-up ModelsSnapshot / WarmCountChanged events.
-        }
+        AppEvent::ModelLoading(_) | AppEvent::ModelLoaded(_) | AppEvent::ModelUnloaded(_) => {}
         AppEvent::ModelLoadFailed(tier, err) => {
-            state.chat.push_message(Message {
+            state.chat_section.chat.push_message(Message {
                 role: Role::System,
                 content: format!("failed to load {}: {err}", tier_label(tier)),
             });
@@ -479,9 +372,8 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
             state.warm_count = n;
             state.active_loading = active_loading;
         }
-        AppEvent::BrowseData { db, files, total_chunks } => {
-            use crate::overlays::BrowseOverlay;
-            state.overlay = Some(Box::new(BrowseOverlay::new(db, files, total_chunks)));
+        AppEvent::BrowseData { .. } => {
+            // Will be handled by the Databases section (Phase 3).
         }
     }
 }
@@ -506,41 +398,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_dbs() {
-        assert!(matches!(parse_input("/dbs"), AppCommand::ListDbs));
-    }
-
-    #[test]
-    fn parse_db_switch() {
-        match parse_input("/db code") {
-            AppCommand::SwitchDb(name) => assert_eq!(name, "code"),
-            _ => panic!("expected SwitchDb"),
-        }
-    }
-
-    #[test]
-    fn parse_index_without_db() {
-        match parse_input("/index /tmp/foo") {
-            AppCommand::Index { path, db } => {
-                assert_eq!(path, "/tmp/foo");
-                assert!(db.is_none());
-            }
-            _ => panic!("expected Index"),
-        }
-    }
-
-    #[test]
-    fn parse_index_with_db() {
-        match parse_input("/index /tmp/foo code") {
-            AppCommand::Index { path, db } => {
-                assert_eq!(path, "/tmp/foo");
-                assert_eq!(db.as_deref(), Some("code"));
-            }
-            _ => panic!("expected Index"),
-        }
-    }
-
-    #[test]
     fn parse_plain_question_becomes_ask() {
         match parse_input("what is this?") {
             AppCommand::Ask { query } => assert_eq!(query, "what is this?"),
@@ -549,15 +406,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_status() {
-        assert!(matches!(parse_input("/status"), AppCommand::Status));
-        assert!(matches!(parse_input("  /status  "), AppCommand::Status));
-    }
-
-    #[test]
-    fn parse_help_variants() {
-        assert!(matches!(parse_input("/help"), AppCommand::Help));
-        assert!(matches!(parse_input("/?"), AppCommand::Help));
-        assert!(matches!(parse_input("  /help  "), AppCommand::Help));
+    fn parse_slash_non_quit_becomes_ask() {
+        // Legacy slash commands are gone — they now flow to the model as
+        // normal prose so nothing silently disappears.
+        match parse_input("/index /tmp/foo") {
+            AppCommand::Ask { query } => assert_eq!(query, "/index /tmp/foo"),
+            _ => panic!("expected Ask"),
+        }
     }
 }

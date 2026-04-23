@@ -7,23 +7,24 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::commands::COMMANDS;
-use crate::overlay::{centered, Overlay, OverlayAction};
+use crate::overlay::{Overlay, OverlayAction, centered};
 
 struct KeyEntry {
     key: &'static str,
     description: &'static str,
 }
 
-const KEYS: &[KeyEntry] = &[
-    KeyEntry { key: "/",                description: "open the command palette; filters as you type" },
-    KeyEntry { key: "Enter",            description: "submit input (or run selected command / activate in overlays)" },
-    KeyEntry { key: "Up / Down, j / k", description: "scroll chat / navigate palette / navigate lists" },
-    KeyEntry { key: "Tab after /index ",description: "complete the partial path" },
-    KeyEntry { key: "Tab (chat)",       description: "toggle the context panel" },
-    KeyEntry { key: "1–9 in /browse",   description: "filter by language pill; 0 clears" },
-    KeyEntry { key: "Ctrl+C, Ctrl+Q",   description: "quit" },
-    KeyEntry { key: "Esc / q",          description: "dismiss overlay / palette" },
+const GLOBAL_KEYS: &[KeyEntry] = &[
+    KeyEntry { key: "Ctrl+1..5",     description: "switch section (Chat / Models / Databases / Index / Settings)" },
+    KeyEntry { key: "Ctrl+C, Ctrl+Q", description: "quit" },
+    KeyEntry { key: "Esc",           description: "back out of a focused sub-pane or overlay" },
+    KeyEntry { key: "?",             description: "toggle this help (when not typing in chat)" },
+];
+
+const CHAT_KEYS: &[KeyEntry] = &[
+    KeyEntry { key: "Enter",  description: "send the current message" },
+    KeyEntry { key: "Tab",    description: "toggle focus between chat input and context pane" },
+    KeyEntry { key: "↑ / ↓",  description: "scroll chat history (input focus) / move selection (context focus)" },
 ];
 
 pub struct HelpOverlay;
@@ -41,14 +42,14 @@ impl Overlay for HelpOverlay {
 
     fn handle_key(&mut self, key: KeyEvent) -> OverlayAction {
         match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => OverlayAction::Dismiss,
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?') => OverlayAction::Dismiss,
             _ => OverlayAction::None,
         }
     }
 }
 
 fn draw_help_overlay(frame: &mut Frame, area: Rect) {
-    let outer = centered(area, 70, 70);
+    let outer = centered(area, 70, 60);
 
     frame.render_widget(
         Paragraph::new("").block(
@@ -69,54 +70,19 @@ fn draw_help_overlay(frame: &mut Frame, area: Rect) {
     let body = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(COMMANDS.len() as u16 + 2),
-            Constraint::Length(KEYS.len() as u16 + 2),
+            Constraint::Length(GLOBAL_KEYS.len() as u16 + 2),
+            Constraint::Length(CHAT_KEYS.len() as u16 + 2),
             Constraint::Min(0),
         ])
         .split(inner);
 
-    draw_commands(frame, body[0]);
-    draw_keys(frame, body[1]);
+    draw_keys(frame, body[0], " Global ", GLOBAL_KEYS);
+    draw_keys(frame, body[1], " Chat ", CHAT_KEYS);
 }
 
-fn draw_commands(frame: &mut Frame, area: Rect) {
-    let col_width = COMMANDS
-        .iter()
-        .map(|c| c.name.len() + if c.takes_args { 6 } else { 0 })
-        .max()
-        .unwrap_or(0)
-        + 2;
-
-    let lines: Vec<Line> = COMMANDS
-        .iter()
-        .map(|c| {
-            let label = if c.takes_args {
-                format!("{} <arg>", c.name)
-            } else {
-                c.name.to_string()
-            };
-            Line::from(vec![
-                Span::styled(
-                    format!("  {:<width$}", label, width = col_width),
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(c.description),
-            ])
-        })
-        .collect();
-
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(Block::default().borders(Borders::ALL).title(" Slash commands ")),
-        area,
-    );
-}
-
-fn draw_keys(frame: &mut Frame, area: Rect) {
-    let col_width = KEYS.iter().map(|e| e.key.len()).max().unwrap_or(0) + 2;
-    let lines: Vec<Line> = KEYS
+fn draw_keys(frame: &mut Frame, area: Rect, title: &str, entries: &[KeyEntry]) {
+    let col_width = entries.iter().map(|e| e.key.len()).max().unwrap_or(0) + 2;
+    let lines: Vec<Line> = entries
         .iter()
         .map(|e| {
             Line::from(vec![
@@ -131,8 +97,7 @@ fn draw_keys(frame: &mut Frame, area: Rect) {
         })
         .collect();
     frame.render_widget(
-        Paragraph::new(lines)
-            .block(Block::default().borders(Borders::ALL).title(" Keys ")),
+        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(title)),
         area,
     );
 }
