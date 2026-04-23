@@ -186,8 +186,8 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
                         }
                     }
                 }
-                AppCommand::Help => {
-                    // Help is handled entirely inside the TUI; never reaches the channel.
+                AppCommand::Help | AppCommand::OpenPicker => {
+                    // Handled entirely inside the TUI; never reaches the channel.
                 }
                 AppCommand::Models => {
                     let rows = build_model_rows(&handler_ctx).await;

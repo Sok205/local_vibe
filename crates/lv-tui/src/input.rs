@@ -73,4 +73,10 @@ impl InputBuffer {
     pub fn as_str(&self) -> String {
         self.buf.iter().collect()
     }
+
+    /// Overwrite the buffer with `s`, putting the cursor at the end.
+    pub fn set_from(&mut self, s: &str) {
+        self.buf = s.chars().collect();
+        self.cursor = self.buf.len();
+    }
 }

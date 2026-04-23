@@ -2,7 +2,7 @@ use std::io;
 use std::time::Duration;
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -59,6 +59,7 @@ pub enum AppCommand {
     Status,
     Models,
     Browse(String),
+    OpenPicker,
     LoadAndActivate(ModelTier),
     LoadModel(ModelTier),
     UnloadModel(ModelTier),
@@ -103,6 +104,9 @@ pub fn parse_input(line: &str) -> AppCommand {
     }
     if let Some(rest) = trimmed.strip_prefix("/db ") {
         return AppCommand::SwitchDb(rest.trim().to_string());
+    }
+    if trimmed == "/index" {
+        return AppCommand::OpenPicker;
     }
     if let Some(rest) = trimmed.strip_prefix("/index ") {
         let mut parts = rest.split_whitespace();
@@ -254,6 +258,16 @@ pub async fn run_tui(
                 }
                 continue;
             }
+            // Tab completion on /index paths, before InputBuffer sees it.
+            if matches!(key.code, KeyCode::Tab) {
+                let current = state.input.as_str();
+                if current.starts_with("/index ")
+                    && let Some(completed) = crate::input_complete::complete_index_line(&current)
+                {
+                    state.input.set_from(&completed);
+                    continue;
+                }
+            }
             let action = state.input.handle_key(key);
             match action {
                 InputAction::Quit => {
@@ -269,6 +283,18 @@ pub async fn run_tui(
                         }
                         AppCommand::Help => {
                             state.overlay = Some(Box::new(HelpOverlay));
+                            continue;
+                        }
+                        AppCommand::OpenPicker => {
+                            let start = std::env::current_dir()
+                                .unwrap_or_else(|_| std::path::PathBuf::from("."));
+                            match crate::overlays::PickerOverlay::new(&start) {
+                                Ok(o) => state.overlay = Some(Box::new(o)),
+                                Err(e) => state.chat.push_message(Message {
+                                    role: Role::System,
+                                    content: format!("picker: {e}"),
+                                }),
+                            }
                             continue;
                         }
                         AppCommand::Ask { query } => {
