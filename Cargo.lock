@@ -4414,6 +4414,7 @@ name = "lv-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap",
  "dirs",
  "futures",
@@ -4435,11 +4436,14 @@ dependencies = [
 name = "lv-core"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
+ "chrono",
  "dirs",
  "futures",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "toml",

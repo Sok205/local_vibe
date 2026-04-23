@@ -3,7 +3,9 @@ use std::sync::Arc;
 use tokio::sync::{OnceCell, RwLock};
 
 use anyhow::Context;
-use lv_core::traits::{EmbeddingBackend, InferenceBackend, VectorStore};
+use async_trait::async_trait;
+use lv_core::status::RuntimeStatus;
+use lv_core::traits::{AppHost, EmbeddingBackend, InferenceBackend, VectorStore};
 use lv_core::types::ModelTier;
 use lv_core::Config;
 use lv_inference::mlx_lm::MlxLmBackend;
@@ -75,7 +77,7 @@ impl AppContext {
         cached.ok_or_else(|| anyhow::anyhow!("no embedding model configured"))
     }
 
-    fn db_path_for(&self, name: &str) -> anyhow::Result<String> {
+    pub fn db_path_for(&self, name: &str) -> anyhow::Result<String> {
         if name == DEFAULT_DB_NAME && self.config.rag.db_root.is_none() {
             return Ok(self.config.rag.db_dir.to_string_lossy().to_string());
         }
@@ -154,6 +156,72 @@ impl AppContext {
             })
             .await
             .clone()
+    }
+
+    async fn peek_runtime_status(&self) -> RuntimeStatus {
+        let mut warm_models = Vec::new();
+        if self.inference.get().is_some() {
+            warm_models.push("medium".to_string());
+        }
+        if self
+            .embedding
+            .get()
+            .and_then(|opt| opt.as_ref())
+            .is_some()
+        {
+            warm_models.push("embedding".to_string());
+        }
+        let warm_dbs: Vec<String> = {
+            let guard = self.stores.read().await;
+            let mut v: Vec<String> = guard.keys().cloned().collect();
+            v.sort();
+            v
+        };
+        RuntimeStatus {
+            warm_models,
+            warm_dbs,
+            pid: std::process::id(),
+            session_id: None,
+        }
+    }
+
+    async fn open_readonly(&self, name: &str) -> anyhow::Result<Arc<dyn VectorStore>> {
+        let path = self.db_path_for(name)?;
+        let store = LanceStore::new(&path, 1)
+            .await
+            .with_context(|| format!("failed to open LanceStore read-only at {path}"))?;
+        Ok(Arc::new(store))
+    }
+}
+
+#[async_trait]
+impl AppHost for AppContext {
+    fn config(&self) -> &Config {
+        &self.config
+    }
+
+    async fn embedding(&self) -> anyhow::Result<Option<Arc<dyn EmbeddingBackend>>> {
+        AppContext::embedding(self).await
+    }
+
+    async fn store_named(&self, name: &str) -> anyhow::Result<Arc<dyn VectorStore>> {
+        AppContext::store_named(self, name).await
+    }
+
+    async fn open_store_readonly(&self, name: &str) -> anyhow::Result<Arc<dyn VectorStore>> {
+        self.open_readonly(name).await
+    }
+
+    async fn list_dbs(&self) -> anyhow::Result<Vec<String>> {
+        AppContext::list_dbs(self).await
+    }
+
+    async fn current_db(&self) -> String {
+        AppContext::current_db(self).await
+    }
+
+    async fn runtime_status(&self) -> RuntimeStatus {
+        self.peek_runtime_status().await
     }
 }
 

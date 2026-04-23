@@ -148,16 +148,27 @@ impl Config {
     }
 
     pub fn discover() -> Self {
-        let candidates = [
-            PathBuf::from("local-vibe.toml"),
-            dirs::config_dir().map(|d| d.join("local-vibe/config.toml")).unwrap_or_default(),
-        ];
-        for path in &candidates {
-            if path.exists() && let Ok(config) = Self::load(path) {
+        for path in Self::candidate_paths() {
+            if path.exists() && let Ok(config) = Self::load(&path) {
                 return config;
             }
         }
         Self::default()
+    }
+
+    /// Returns the path the active `discover()` call would have loaded from,
+    /// or `None` if no candidate exists / parses. Used by the status snapshot.
+    pub fn discover_path() -> Option<PathBuf> {
+        Self::candidate_paths()
+            .into_iter()
+            .find(|p| p.exists() && Self::load(p).is_ok())
+    }
+
+    fn candidate_paths() -> Vec<PathBuf> {
+        vec![
+            PathBuf::from("local-vibe.toml"),
+            dirs::config_dir().map(|d| d.join("local-vibe/config.toml")).unwrap_or_default(),
+        ]
     }
 }
 

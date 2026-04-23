@@ -2,10 +2,11 @@ use std::io;
 use std::time::Duration;
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use lv_core::status::StatusSnapshot;
 use lv_core::types::{Message, ModelTier, Role, SearchResult, StoreStats};
 use ratatui::{
     Terminal,
@@ -23,6 +24,7 @@ use crate::{
     context_panel::ContextPanel,
     input::{InputAction, InputBuffer},
     status_bar::draw_status_bar,
+    status_view::draw_status_overlay,
 };
 
 pub enum AppEvent {
@@ -37,6 +39,7 @@ pub enum AppEvent {
     IndexDone { indexed: usize, skipped: usize, failed: usize },
     DbListing(Vec<String>),
     DbSwitched(String),
+    Status(Box<StatusSnapshot>),
 }
 
 pub enum AppCommand {
@@ -44,6 +47,7 @@ pub enum AppCommand {
     Index { path: String, db: Option<String> },
     ListDbs,
     SwitchDb(String),
+    Status,
     Quit,
 }
 
@@ -54,6 +58,7 @@ pub enum AppCommand {
 /// - `/dbs`                 — `ListDbs`
 /// - `/db <name>`           — `SwitchDb`
 /// - `/index <path> [name]` — `Index { path, db }`
+/// - `/status`              — `Status`
 ///
 /// Anything else becomes `Ask`.
 pub fn parse_input(line: &str) -> AppCommand {
@@ -63,6 +68,9 @@ pub fn parse_input(line: &str) -> AppCommand {
     }
     if trimmed == "/dbs" {
         return AppCommand::ListDbs;
+    }
+    if trimmed == "/status" {
+        return AppCommand::Status;
     }
     if let Some(rest) = trimmed.strip_prefix("/db ") {
         return AppCommand::SwitchDb(rest.trim().to_string());
@@ -93,6 +101,7 @@ struct AppState {
     store_stats: Option<StoreStats>,
     indexing: Option<IndexingProgress>,
     current_db: String,
+    status_overlay: Option<StatusSnapshot>,
 }
 
 impl AppState {
@@ -106,6 +115,7 @@ impl AppState {
             store_stats: None,
             indexing: None,
             current_db: "default".to_string(),
+            status_overlay: None,
         }
     }
 }
@@ -179,9 +189,20 @@ pub async fn run_tui(
             let cursor_x = rows[2].x + 1 + 2 + state.input.cursor as u16;
             let cursor_y = rows[2].y + 1;
             frame.set_cursor_position((cursor_x, cursor_y));
+
+            // Status overlay paints last so it sits on top
+            if let Some(snap) = &state.status_overlay {
+                draw_status_overlay(frame, size, snap);
+            }
         })?;
 
         if event::poll(poll_interval)? && let Event::Key(key) = event::read()? {
+            if state.status_overlay.is_some() {
+                if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
+                    state.status_overlay = None;
+                }
+                continue;
+            }
             let action = state.input.handle_key(key);
             match action {
                 InputAction::Quit => {
@@ -279,6 +300,9 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
                 content: format!("Switched to DB '{name}'."),
             });
         }
+        AppEvent::Status(snapshot) => {
+            state.status_overlay = Some(*snapshot);
+        }
     }
 }
 
@@ -333,5 +357,11 @@ mod tests {
             AppCommand::Ask { query } => assert_eq!(query, "what is this?"),
             _ => panic!("expected Ask"),
         }
+    }
+
+    #[test]
+    fn parse_status() {
+        assert!(matches!(parse_input("/status"), AppCommand::Status));
+        assert!(matches!(parse_input("  /status  "), AppCommand::Status));
     }
 }

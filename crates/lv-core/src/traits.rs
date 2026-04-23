@@ -1,13 +1,30 @@
+use crate::config::Config;
+use crate::status::RuntimeStatus;
 use crate::types::*;
 use crate::Result;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[async_trait]
 pub trait InferenceBackend: Send + Sync {
     async fn complete(&self, req: CompletionRequest) -> Result<CompletionStream>;
     fn model_info(&self) -> ModelInfo;
     async fn health(&self) -> BackendHealth;
+}
+
+/// Narrow capability surface that every consumer (CLI status, TUI status overlay,
+/// MCP tools) uses to reach the running application. Implemented by AppContext in
+/// lv-cli; kept here so MCP can depend on it without a circular crate dependency.
+#[async_trait]
+pub trait AppHost: Send + Sync {
+    fn config(&self) -> &Config;
+    async fn embedding(&self) -> anyhow::Result<Option<Arc<dyn EmbeddingBackend>>>;
+    async fn store_named(&self, name: &str) -> anyhow::Result<Arc<dyn VectorStore>>;
+    async fn open_store_readonly(&self, name: &str) -> anyhow::Result<Arc<dyn VectorStore>>;
+    async fn list_dbs(&self) -> anyhow::Result<Vec<String>>;
+    async fn current_db(&self) -> String;
+    async fn runtime_status(&self) -> RuntimeStatus;
 }
 
 #[async_trait]

@@ -100,13 +100,13 @@ pub struct SearchFilter {
     pub file_path: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StoreStats {
     pub total_chunks: usize,
     pub unique_files: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileSummary {
     pub file_path: String,
     pub language: Option<String>,

@@ -5,7 +5,8 @@ use clap::{Parser, Subcommand};
 use futures::StreamExt;
 use tokio::sync::mpsc;
 
-use lv_core::traits::CodeGraph;
+use lv_core::status::{collect_declared_status, Readiness, StatusSnapshot};
+use lv_core::traits::{AppHost, CodeGraph};
 use lv_core::types::{
     CompletionRequest, Message, Role, SearchFilter, SearchResult,
 };
@@ -39,8 +40,29 @@ enum Command {
     Serve,
     /// List configured models
     Models,
-    /// Show index stats
+    /// Show index stats for the current DB
     Stats,
+    /// Show a full status snapshot (models + every indexed DB)
+    Status {
+        /// Emit JSON instead of a human-readable summary
+        #[arg(long)]
+        json: bool,
+    },
+    /// List indexed DB names
+    Dbs {
+        #[arg(long)]
+        json: bool,
+    },
+    /// List files inside a given DB
+    Ls {
+        /// DB name (or "default" when no db_root is configured)
+        db: String,
+        /// Max files to display
+        #[arg(long, default_value_t = 500)]
+        limit: usize,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[tokio::main]
@@ -90,6 +112,9 @@ async fn main() -> anyhow::Result<()> {
         Some(Command::Serve) => run_serve(config).await,
         Some(Command::Models) => run_models(&config),
         Some(Command::Stats) => run_stats(config).await,
+        Some(Command::Status { json }) => run_status(config, json).await,
+        Some(Command::Dbs { json }) => run_dbs(config, json).await,
+        Some(Command::Ls { db, limit, json }) => run_ls(config, &db, limit, json).await,
     }
 }
 
@@ -140,6 +165,24 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
                         }
                         Err(e) => {
                             let _ = handler_event_tx.send(AppEvent::Error(e.to_string())).await;
+                        }
+                    }
+                }
+                AppCommand::Status => {
+                    let current = handler_ctx.current_db().await;
+                    match collect_declared_status(&*handler_ctx, Some(&current)).await {
+                        Ok(mut snap) => {
+                            if let Some(rt) = snap.runtime.as_mut() {
+                                rt.session_id = Some(session_id.to_string());
+                            }
+                            let _ = handler_event_tx
+                                .send(AppEvent::Status(Box::new(snap)))
+                                .await;
+                        }
+                        Err(e) => {
+                            let _ = handler_event_tx
+                                .send(AppEvent::Error(format!("status: {e}")))
+                                .await;
                         }
                     }
                 }
@@ -412,6 +455,14 @@ async fn index_with_progress(
                     .await;
             }
             lv_core::types::IndexProgress::Complete { indexed, skipped, failed } => {
+                let resolved_db = db_name.clone().unwrap_or_else(|| "default".to_string());
+                if let Ok(db_path) = ctx.db_path_for(&resolved_db)
+                    && let Err(e) = lv_core::sidecar::write_indexed_now(
+                        std::path::Path::new(&db_path),
+                        env!("CARGO_PKG_VERSION"),
+                    ) {
+                    tracing::warn!("failed to write sidecar for '{resolved_db}': {e}");
+                }
                 let _ = event_tx
                     .send(AppEvent::IndexDone { indexed, skipped, failed })
                     .await;
@@ -438,6 +489,8 @@ async fn run_index(config: Config, path: &str) -> anyhow::Result<()> {
         );
     };
     let store = ctx.store().await?;
+    let db_name = ctx.current_db().await;
+    let db_path = ctx.db_path_for(&db_name)?;
 
     let parsers: Vec<Box<dyn lv_core::traits::Parser>> = vec![
         Box::new(TextParser),
@@ -462,23 +515,21 @@ async fn run_index(config: Config, path: &str) -> anyhow::Result<()> {
         }
     }
     handle.await??;
+
+    if let Err(e) = lv_core::sidecar::write_indexed_now(
+        std::path::Path::new(&db_path),
+        env!("CARGO_PKG_VERSION"),
+    ) {
+        tracing::warn!("failed to write sidecar for '{db_name}': {e}");
+    }
     Ok(())
 }
 
 async fn run_serve(config: Config) -> anyhow::Result<()> {
-    let ctx = AppContext::new(config);
-    let embedder = ctx
-        .embedding()
-        .await
-        .context("embedding backend init")?
-        .context(
-            "MCP serve requires an embedding model. \
-             Set [models.embedding] in local-vibe.toml.",
-        )?;
-    let store = ctx.store().await.context("vector store init")?;
-
+    let ctx: Arc<AppContext> = Arc::new(AppContext::new(config));
     tracing::info!("MCP server starting on stdio");
-    let server = lv_mcp::VibeMcpServer::new(embedder, store);
+    let host: Arc<dyn AppHost> = ctx;
+    let server = lv_mcp::VibeMcpServer::new(host);
     lv_mcp::run_stdio(server)
         .await
         .map_err(|e| anyhow::anyhow!("MCP server: {e}"))?;
@@ -499,4 +550,127 @@ async fn run_stats(config: Config) -> anyhow::Result<()> {
         stats.total_chunks, stats.unique_files
     );
     Ok(())
+}
+
+async fn run_status(config: Config, json: bool) -> anyhow::Result<()> {
+    let ctx = AppContext::new(config);
+    let current = ctx.current_db().await;
+    let snapshot = collect_declared_status(&ctx, Some(&current)).await?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&snapshot)?);
+    } else {
+        print_status_human(&snapshot);
+    }
+    Ok(())
+}
+
+async fn run_dbs(config: Config, json: bool) -> anyhow::Result<()> {
+    let ctx = AppContext::new(config);
+    let names = if ctx.config.rag.db_root.is_some() {
+        ctx.list_dbs().await?
+    } else if ctx.config.rag.db_dir.exists() {
+        vec!["default".to_string()]
+    } else {
+        Vec::new()
+    };
+    if json {
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "dbs": names }))?);
+    } else if names.is_empty() {
+        println!("(no DBs — index something with `lv index` or `/index <path> <name>` in the TUI)");
+    } else {
+        for n in &names {
+            println!("{n}");
+        }
+    }
+    Ok(())
+}
+
+async fn run_ls(config: Config, db: &str, limit: usize, json: bool) -> anyhow::Result<()> {
+    let ctx = AppContext::new(config);
+    let store = ctx.open_store_readonly(db).await?;
+    let files = store
+        .list_files(limit)
+        .await
+        .context("list_files failed")?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&files)?);
+    } else if files.is_empty() {
+        println!("(no files in DB '{db}')");
+    } else {
+        for f in &files {
+            let lang = f.language.as_deref().unwrap_or("?");
+            println!(
+                "[{lang}] {} ({} chunk{})",
+                f.file_path,
+                f.chunk_count,
+                if f.chunk_count == 1 { "" } else { "s" }
+            );
+        }
+    }
+    Ok(())
+}
+
+fn print_status_human(s: &StatusSnapshot) {
+    let ready_glyph = |r: &Readiness| match r {
+        Readiness::Ready => "ok".to_string(),
+        Readiness::MissingWeights => "missing weights".to_string(),
+        Readiness::Unknown => "unknown".to_string(),
+    };
+
+    println!("── Models ─────────────────────────────────────");
+    let m = &s.models;
+    println!("  fast      {} ({}) — {}", m.fast.name, m.fast.backend, ready_glyph(&m.fast.ready));
+    println!("  medium    {} ({}) — {}", m.medium.name, m.medium.backend, ready_glyph(&m.medium.ready));
+    println!("  strong    {} ({}) — {}", m.strong.name, m.strong.backend, ready_glyph(&m.strong.ready));
+    match &m.embedding {
+        Some(e) => println!("  embedding {} ({}) — {}", e.name, e.backend, ready_glyph(&e.ready)),
+        None => println!("  embedding (not configured — RAG disabled)"),
+    }
+    match &m.cloud {
+        Some(c) => println!("  cloud     {} via {}", c.model, c.provider),
+        None => println!("  cloud     (not configured)"),
+    }
+
+    println!();
+    println!("── Databases ─────────────────────────────────");
+    if s.databases.is_empty() {
+        println!("  (none)");
+    } else {
+        for db in &s.databases {
+            let marker = if db.is_current { "*" } else { " " };
+            let indexed = db.indexed_at.as_deref().unwrap_or("-");
+            println!(
+                "{marker} {} — {} chunks, {} files, indexed {}",
+                db.name, db.total_chunks, db.unique_files, indexed
+            );
+            if let Some(err) = &db.error {
+                println!("    error: {err}");
+            }
+            if !db.languages.is_empty() {
+                let preview: Vec<String> = db.languages
+                    .iter()
+                    .take(6)
+                    .map(|(k, v)| format!("{k}:{v}"))
+                    .collect();
+                println!("    languages: {}", preview.join(", "));
+            }
+            println!("    path: {}", db.path.display());
+        }
+    }
+
+    println!();
+    println!("── Runtime ───────────────────────────────────");
+    if let Some(root) = &s.db_root {
+        println!("  db_root: {}", root.display());
+    }
+    if let Some(cp) = &s.config_path {
+        println!("  config:  {}", cp.display());
+    }
+    if let Some(r) = &s.runtime {
+        let warm_models = if r.warm_models.is_empty() { "(none)".to_string() } else { r.warm_models.join(", ") };
+        let warm_dbs = if r.warm_dbs.is_empty() { "(none)".to_string() } else { r.warm_dbs.join(", ") };
+        println!("  pid: {}", r.pid);
+        println!("  warm models: {warm_models}");
+        println!("  warm dbs:    {warm_dbs}");
+    }
 }

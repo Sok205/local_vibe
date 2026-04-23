@@ -1,7 +1,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use lv_core::traits::{EmbeddingBackend, VectorStore};
+use lv_core::status::collect_declared_status;
+use lv_core::traits::{AppHost, VectorStore};
 use lv_core::types::{IndexProgress, SearchFilter};
 use lv_rag::chunker::OverlappingChunker;
 use lv_rag::indexer::IndexManager;
@@ -33,12 +34,22 @@ pub struct SearchCodeParams {
     pub language: Option<String>,
     /// Filter by file path (exact match)
     pub file_path: Option<String>,
+    /// DB name. When omitted, uses the server's current DB.
+    pub db: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct StatsParams {
+    /// DB name. When omitted, uses the server's current DB.
+    pub db: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ListSourcesParams {
     /// Maximum number of files to return (default: 200)
     pub limit: Option<u32>,
+    /// DB name. When omitted, uses the server's current DB.
+    pub db: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -51,24 +62,21 @@ pub struct IndexDirectoryParams {
     pub chunk_overlap: Option<usize>,
     /// Concurrency limit (default: 4)
     pub concurrency: Option<usize>,
+    /// DB name. When omitted, indexes into the server's current DB.
+    pub db: Option<String>,
 }
 
 #[derive(Clone)]
 pub struct VibeMcpServer {
-    embedder: Arc<dyn EmbeddingBackend>,
-    store: Arc<dyn VectorStore>,
+    host: Arc<dyn AppHost>,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
 
 impl VibeMcpServer {
-    pub fn new(
-        embedder: Arc<dyn EmbeddingBackend>,
-        store: Arc<dyn VectorStore>,
-    ) -> Self {
+    pub fn new(host: Arc<dyn AppHost>) -> Self {
         Self {
-            embedder,
-            store,
+            host,
             tool_router: Self::tool_router(),
         }
     }
@@ -81,11 +89,30 @@ impl VibeMcpServer {
             Box::new(EpubParser),
         ]
     }
+
+    async fn resolve_store(
+        &self,
+        db: Option<String>,
+        read_only: bool,
+    ) -> Result<Arc<dyn VectorStore>, McpError> {
+        let name = match db {
+            Some(n) => n,
+            None => self.host.current_db().await,
+        };
+        let result = if read_only {
+            self.host.open_store_readonly(&name).await
+        } else {
+            self.host.store_named(&name).await
+        };
+        result.map_err(|e| {
+            McpError::internal_error(format!("failed to open DB '{name}': {e}"), None)
+        })
+    }
 }
 
 #[tool_router]
 impl VibeMcpServer {
-    #[tool(description = "Search indexed code and documents using semantic similarity. Returns relevant chunks with file citations and similarity scores.")]
+    #[tool(description = "Search indexed code and documents using semantic similarity. Returns relevant chunks with file citations and similarity scores. Pass `db` to search a specific indexed DB; omit to use the server's current DB.")]
     async fn search_code(
         &self,
         Parameters(params): Parameters<SearchCodeParams>,
@@ -98,7 +125,21 @@ impl VibeMcpServer {
             file_path: params.file_path,
         };
 
-        let query_engine = QueryEngine::new(self.embedder.clone(), self.store.clone());
+        let embedder = self
+            .host
+            .embedding()
+            .await
+            .map_err(|e| McpError::internal_error(format!("embedding: {e}"), None))?
+            .ok_or_else(|| {
+                McpError::internal_error(
+                    "no embedding model configured; set [models.embedding] in local-vibe.toml"
+                        .to_string(),
+                    None,
+                )
+            })?;
+        let store = self.resolve_store(params.db, false).await?;
+
+        let query_engine = QueryEngine::new(embedder, store);
         let results = query_engine
             .search(&params.query, limit, threshold, &filter)
             .await
@@ -124,7 +165,7 @@ impl VibeMcpServer {
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 
-    #[tool(description = "Index a local directory into the vector store. Parses code and documents (Rust, TypeScript, Python, Markdown, PDF, HTML, EPUB) into chunks, embeds them, and stores for semantic search.")]
+    #[tool(description = "Index a local directory into the vector store. Parses code and documents (Rust, TypeScript, Python, Markdown, PDF, HTML, EPUB) into chunks, embeds them, and stores for semantic search. Pass `db` to target a specific DB; omit to use the server's current DB.")]
     async fn index_directory(
         &self,
         Parameters(params): Parameters<IndexDirectoryParams>,
@@ -147,11 +188,25 @@ impl VibeMcpServer {
         let chunk_overlap = params.chunk_overlap.unwrap_or(40);
         let concurrency = params.concurrency.unwrap_or(4);
 
+        let embedder = self
+            .host
+            .embedding()
+            .await
+            .map_err(|e| McpError::internal_error(format!("embedding: {e}"), None))?
+            .ok_or_else(|| {
+                McpError::internal_error(
+                    "no embedding model configured; set [models.embedding] in local-vibe.toml"
+                        .to_string(),
+                    None,
+                )
+            })?;
+        let store = self.resolve_store(params.db, false).await?;
+
         let manager = IndexManager::new(
             Self::build_parsers(),
             Box::new(OverlappingChunker::new(chunk_size, chunk_overlap)),
-            self.embedder.clone(),
-            self.store.clone(),
+            embedder,
+            store,
             concurrency,
         );
 
@@ -188,10 +243,13 @@ impl VibeMcpServer {
         ))]))
     }
 
-    #[tool(description = "Get statistics about the indexed code store: total chunks and unique files.")]
-    async fn get_stats(&self) -> Result<CallToolResult, McpError> {
-        let stats = self
-            .store
+    #[tool(description = "Get statistics about an indexed DB: total chunks and unique files. Pass `db` to inspect a specific DB; omit to use the server's current DB.")]
+    async fn get_stats(
+        &self,
+        Parameters(params): Parameters<StatsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let store = self.resolve_store(params.db, true).await?;
+        let stats = store
             .stats()
             .await
             .map_err(|e| McpError::internal_error(format!("Stats failed: {e}"), None))?;
@@ -202,14 +260,14 @@ impl VibeMcpServer {
         ))]))
     }
 
-    #[tool(description = "List indexed files with their language and chunk count. Returns up to `limit` files (default 200), sorted by path.")]
+    #[tool(description = "List indexed files with their language and chunk count. Returns up to `limit` files (default 200), sorted by path. Pass `db` to inspect a specific DB; omit to use the server's current DB.")]
     async fn list_sources(
         &self,
         Parameters(params): Parameters<ListSourcesParams>,
     ) -> Result<CallToolResult, McpError> {
         let limit = params.limit.unwrap_or(200) as usize;
-        let files = self
-            .store
+        let store = self.resolve_store(params.db, true).await?;
+        let files = store
             .list_files(limit)
             .await
             .map_err(|e| McpError::internal_error(format!("List sources failed: {e}"), None))?;
@@ -232,6 +290,17 @@ impl VibeMcpServer {
             ));
         }
         Ok(CallToolResult::success(vec![Content::text(out)]))
+    }
+
+    #[tool(description = "Get a full status snapshot: configured models, every indexed DB with per-language breakdown, and runtime state (warm models/DBs). Returns JSON.")]
+    async fn get_status(&self) -> Result<CallToolResult, McpError> {
+        let current = self.host.current_db().await;
+        let snapshot = collect_declared_status(&*self.host, Some(&current))
+            .await
+            .map_err(|e| McpError::internal_error(format!("status: {e}"), None))?;
+        let json = serde_json::to_string_pretty(&snapshot)
+            .map_err(|e| McpError::internal_error(format!("serialize status: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 }
 
