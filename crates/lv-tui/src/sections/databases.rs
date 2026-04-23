@@ -185,7 +185,7 @@ impl DatabasesSection {
     }
 
     pub fn keyhints(&self) -> &'static str {
-        "↑↓ select  ·  Enter activate  ·  b browse files  ·  Ctrl+4 index into DB  ·  Ctrl+1..5 sections"
+        "↑↓ select  ·  Enter activate  ·  b browse files  ·  F4 index into DB  ·  F1..F5 sections"
     }
 }
 

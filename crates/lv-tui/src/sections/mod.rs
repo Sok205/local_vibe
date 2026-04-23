@@ -36,16 +36,42 @@ impl Section {
         }
     }
 
-    pub fn hotkey(self) -> char {
+    /// The F-key number that jumps to this section. `F1..F5` was chosen over
+    /// `Ctrl+1..5` because many macOS terminals do not emit anything for
+    /// Ctrl+1..Ctrl+3 — only Ctrl+4..Ctrl+8 map to ASCII control characters.
+    pub fn function_key(self) -> u8 {
         match self {
-            Section::Chat => '1',
-            Section::Models => '2',
-            Section::Databases => '3',
-            Section::Index => '4',
-            Section::Settings => '5',
+            Section::Chat => 1,
+            Section::Models => 2,
+            Section::Databases => 3,
+            Section::Index => 4,
+            Section::Settings => 5,
         }
     }
 
+    pub fn hotkey_label(self) -> &'static str {
+        match self {
+            Section::Chat => "F1",
+            Section::Models => "F2",
+            Section::Databases => "F3",
+            Section::Index => "F4",
+            Section::Settings => "F5",
+        }
+    }
+
+    pub fn from_function_key(n: u8) -> Option<Self> {
+        match n {
+            1 => Some(Section::Chat),
+            2 => Some(Section::Models),
+            3 => Some(Section::Databases),
+            4 => Some(Section::Index),
+            5 => Some(Section::Settings),
+            _ => None,
+        }
+    }
+
+    /// Fallback `Ctrl+digit` binding kept alive for terminals that *do* deliver
+    /// them cleanly; see `function_key` for the reason it can't be the primary.
     pub fn from_digit(c: char) -> Option<Self> {
         match c {
             '1' => Some(Section::Chat),

@@ -15,7 +15,8 @@ struct KeyEntry {
 }
 
 const GLOBAL_KEYS: &[KeyEntry] = &[
-    KeyEntry { key: "Ctrl+1..5",     description: "switch section (Chat / Models / Databases / Index / Settings)" },
+    KeyEntry { key: "F1..F5",        description: "switch section (Chat / Models / Databases / Index / Settings)" },
+    KeyEntry { key: "Ctrl+1..5",     description: "same (fallback — many macOS terms eat Ctrl+1..3)" },
     KeyEntry { key: "Ctrl+C, Ctrl+Q", description: "quit" },
     KeyEntry { key: "Esc",           description: "back out of a focused sub-pane or overlay" },
     KeyEntry { key: "?",             description: "toggle this help (when not typing in chat)" },

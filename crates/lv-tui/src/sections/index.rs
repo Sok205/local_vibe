@@ -266,7 +266,7 @@ impl IndexSection {
     }
 
     pub fn keyhints(&self) -> &'static str {
-        "Enter start  ·  Tab complete/focus  ·  ↑↓ cycle fields  ·  Ctrl+1..5 sections"
+        "Enter start  ·  Tab complete/focus  ·  ↑↓ cycle fields  ·  F1..F5 sections"
     }
 }
 

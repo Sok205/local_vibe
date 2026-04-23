@@ -237,11 +237,17 @@ pub async fn run_tui(
                 break;
             }
 
-            // Global: Ctrl+1..5 jumps section.
-            if key.modifiers.contains(KeyModifiers::CONTROL)
-                && let KeyCode::Char(c) = key.code
-                && let Some(section) = Section::from_digit(c)
-            {
+            // Global: F1..F5 jumps section (primary). Ctrl+digit is kept
+            // as a fallback for terminals that deliver it, but on macOS
+            // Terminal / iTerm2 only Ctrl+4..=Ctrl+5 actually register.
+            let section_switch: Option<Section> = match key.code {
+                KeyCode::F(n) => Section::from_function_key(n),
+                KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    Section::from_digit(c)
+                }
+                _ => None,
+            };
+            if let Some(section) = section_switch {
                 state.active_section = section;
                 // Refresh section-specific data on entry. Cheap operations;
                 // the backend replies with an event that updates the section.

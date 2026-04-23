@@ -195,7 +195,7 @@ impl ModelsSection {
     }
 
     pub fn keyhints(&self) -> &'static str {
-        "↑↓ select  ·  Enter load+activate  ·  l load  ·  u unload  ·  a set active  ·  Ctrl+1..5 sections"
+        "↑↓ select  ·  Enter load+activate  ·  l load  ·  u unload  ·  a set active  ·  F1..F5 sections"
     }
 }
 

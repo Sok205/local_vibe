@@ -40,7 +40,7 @@ lv                                 # TUI
 lv ask "explain lifetimes in 2 sentences"
 ```
 
-Inside the TUI, `Ctrl+1..5` jumps between **Chat · Models · Databases · Index · Settings**. Everything else is discoverable by sight. No slash commands to memorise.
+Inside the TUI, `F1..F5` (or `Ctrl+1..5` where your terminal supports it) jumps between **Chat · Models · Databases · Index · Settings**. Everything else is discoverable by sight. No slash commands to memorise.
 
 First TUI launch takes ~5 s to memory-map the 4.4 GB GGUF and
 ~10 s extra on first fastembed run (downloads the ONNX embedding
@@ -121,7 +121,7 @@ Accepted embedding model names: `bge-small-en` (384-d, ~130 MB),
 `bge-base-en` (768-d), `nomic-embed-text-v1.5` (768-d, ~260 MB).
 
 Declare `[models.fast]` and `[models.strong]` the same way if you want
-to switch between tiers from inside the TUI (`Ctrl+2` → Enter on the tier you want).
+to switch between tiers from inside the TUI (`F2` → Enter on the tier you want).
 
 Omit `db_root` to stay in single-DB mode at `[rag].db_dir`
 (default: `~/Library/Application Support/local-vibe/db`).
@@ -162,13 +162,13 @@ hint line at the bottom. There's no command palette — everything is one
 
 ```
 ┌ local-vibe ── chat: qwen2.5-7b (medium · warm) · db: rust-rag · 2 warm · idle ─┐
-│ [1] Chat      │ ┌─ Chat ───────────────────────┬─ Context ──────────────┐ │
-│>[2] Models    │ │ You: …                       │ rust-book.md #3        │ │
-│ [3] Databases │ │ AI:  …                       │   "Spawning Tasks"     │ │
-│ [4] Index     │ │                              │                        │ │
-│ [5] Settings  │ │ > _                          │                        │ │
+│ F1 Chat       │ ┌─ Chat ───────────────────────┬─ Context ──────────────┐ │
+│>F2 Models     │ │ You: …                       │ rust-book.md #3        │ │
+│ F3 Databases  │ │ AI:  …                       │   "Spawning Tasks"     │ │
+│ F4 Index      │ │                              │                        │ │
+│ F5 Settings   │ │ > _                          │                        │ │
 │               │ └──────────────────────────────┴────────────────────────┘ │
-│ ?: help       │  Enter send · Tab → Context · ↑↓ scroll · Ctrl+1..5 sect. │
+│ ?: help       │  Enter send · Tab → Context · ↑↓ scroll · F1..F5 sect. │
 └───────────────┴──────────────────────────────────────────────────────────────┘
 ```
 
@@ -182,7 +182,7 @@ hint line at the bottom. There's no command palette — everything is one
 | **?** (when not typing)            | toggle the help overlay                                    |
 | **Ctrl-C / Ctrl-Q**                | quit                                                       |
 
-### [1] Chat
+### F1 · Chat
 
 Two-column layout, always. Left (~70%) is the conversation + input;
 right (~30%) is the Context pane showing retrieved chunks for the last
@@ -191,7 +191,7 @@ scroll the history (input focus) or move a cursor over chunks (context
 focus). Typing `/anything` (except `/quit`) is passed to the model as
 prose — no special slash handling.
 
-### [2] Models
+### F2 · Models
 
 One row per slot: `fast · medium · strong · cloud · embed`. Columns
 show name, backend, warm/cold state, and an active marker.
@@ -204,7 +204,7 @@ show name, backend, warm/cold state, and an active marker.
 | **u**                 | unload (refused on the currently active tier)        |
 | **a**                 | set active — requires the tier to already be warm    |
 
-### [3] Databases
+### F3 · Databases
 
 Two columns. Left: every DB with an active marker. Right: detail for
 the selected DB — path, indexed-at timestamp, file and chunk counts,
@@ -216,7 +216,7 @@ top-5 language histogram, last error if any.
 | **Enter**                          | activate (and jump back to Chat)                           |
 | **b**                              | file browser peek (language pills `1…9`, `0` clears)       |
 
-### [4] Index
+### F4 · Index
 
 Two text fields stacked: **Path** and **Into**. Entering the section
 prefills Into with the active DB. `Tab` inside Path runs filesystem
@@ -224,7 +224,7 @@ completion; falling through, it cycles focus. `Enter` submits. While
 indexing, a magenta progress bar shows `done/total` and the current
 file. `↑/↓` cycles between fields.
 
-### [5] Settings
+### F5 · Settings
 
 Read-only: version, config path, DB root, process id, warm models and
 DBs, session id. Right panel has a compact global + per-section keybind
@@ -267,7 +267,7 @@ Wire it into Claude Code:
 claude mcp add lv lv serve
 ```
 
-The server uses the *current* DB (whichever `Ctrl+3` → Enter would pick in
+The server uses the *current* DB (whichever `F3` → Enter would pick in
 the TUI) when no `db` argument is given. Logs go to
 `~/.local/share/local-vibe/lv-mcp.log` so they don't corrupt the
 JSON-RPC frames on stdout.

@@ -26,7 +26,7 @@ pub fn draw_sidebar(frame: &mut Frame, area: Rect, active: Section) {
         };
         lines.push(Line::from(vec![
             Span::styled(marker, style),
-            Span::styled(format!("[{}] ", section.hotkey()), style),
+            Span::styled(format!("{} ", section.hotkey_label()), style),
             Span::styled(section.label(), style),
         ]));
     }

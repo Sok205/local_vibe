@@ -122,7 +122,7 @@ impl ChatSection {
 
     pub fn keyhints(&self) -> &'static str {
         match self.focus {
-            Focus::Input => "Enter send  ·  Tab → Context  ·  ↑↓ scroll  ·  Ctrl+1..5 sections  ·  Ctrl+Q quit",
+            Focus::Input => "Enter send  ·  Tab → Context  ·  ↑↓ scroll  ·  F1..F5 sections  ·  Ctrl+Q quit",
             Focus::Context => "Tab → Chat  ·  Esc back  ·  (source peek coming soon)",
         }
     }

@@ -99,7 +99,8 @@ impl SettingsSection {
 
     fn draw_keybinds(&self, frame: &mut Frame, area: Rect) {
         let entries: &[(&str, &str)] = &[
-            ("Ctrl+1..5",    "switch section"),
+            ("F1..F5",       "switch section"),
+            ("Ctrl+1..5",    "same (fallback — Ctrl+1..3 silent on most macOS terms)"),
             ("Ctrl+C, Ctrl+Q", "quit"),
             ("Tab",          "cycle focus inside section"),
             ("Esc",          "back out / dismiss peek"),
@@ -154,7 +155,7 @@ impl SettingsSection {
     }
 
     pub fn keyhints(&self) -> &'static str {
-        "read-only  ·  Ctrl+1..5 switch section  ·  Ctrl+Q quit"
+        "read-only  ·  F1..F5 switch section  ·  Ctrl+Q quit"
     }
 }
 
