@@ -8,12 +8,15 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
+use crate::sys_memory::{MemorySample, fmt_bytes};
+
 use super::SectionOutcome;
 
 /// Read-only Settings + Help. Mirrors what users used to dig out of
 /// `/status` and `/help`, now surfaced ambiently.
 pub struct SettingsSection {
     snapshot: Option<StatusSnapshot>,
+    memory: MemorySample,
 }
 
 impl Default for SettingsSection {
@@ -24,11 +27,18 @@ impl Default for SettingsSection {
 
 impl SettingsSection {
     pub fn new() -> Self {
-        Self { snapshot: None }
+        Self {
+            snapshot: None,
+            memory: MemorySample::default(),
+        }
     }
 
     pub fn update(&mut self, snapshot: StatusSnapshot) {
         self.snapshot = Some(snapshot);
+    }
+
+    pub fn set_memory(&mut self, sample: MemorySample) {
+        self.memory = sample;
     }
 
     pub fn draw(&self, frame: &mut Frame, area: Rect) {
@@ -45,6 +55,34 @@ impl SettingsSection {
         let mut lines: Vec<Line> = Vec::new();
 
         lines.push(kv("Version", env!("CARGO_PKG_VERSION").to_string()));
+
+        // Memory panel — always present, updates live from the poller.
+        if self.memory.rss_bytes > 0 {
+            lines.push(Line::raw(""));
+            lines.push(Line::from(Span::styled(
+                "  Memory",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )));
+            lines.push(kv("  RSS", fmt_bytes(self.memory.rss_bytes)));
+            lines.push(kv("  Virtual", fmt_bytes(self.memory.vsize_bytes)));
+            if self.memory.swap_total_bytes > 0 {
+                let pct = (self.memory.swap_used_bytes as f64
+                    / self.memory.swap_total_bytes as f64)
+                    * 100.0;
+                lines.push(kv(
+                    "  Swap (system)",
+                    format!(
+                        "{} / {} ({:.0}%)",
+                        fmt_bytes(self.memory.swap_used_bytes),
+                        fmt_bytes(self.memory.swap_total_bytes),
+                        pct,
+                    ),
+                ));
+            }
+            lines.push(Line::raw(""));
+        }
 
         if let Some(snap) = &self.snapshot {
             if let Some(cp) = &snap.config_path {

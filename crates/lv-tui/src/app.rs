@@ -27,6 +27,7 @@ use crate::{
         index::IndexSection, models::ModelsSection, settings::SettingsSection,
     },
     status_bar::{StatusBarView, draw_status_bar},
+    sys_memory::MemoryPoller,
     widgets::sidebar::draw_sidebar,
 };
 
@@ -169,11 +170,15 @@ pub async fn run_tui(
 
     let mut state = AppState::new();
     let poll_interval = Duration::from_millis(50);
+    let mut memory = MemoryPoller::new(Duration::from_millis(1_000));
 
     loop {
         while let Ok(ev) = event_rx.try_recv() {
             handle_app_event(ev, &mut state);
         }
+
+        let mem_sample = memory.sample();
+        state.settings_section.set_memory(mem_sample);
 
         terminal.draw(|frame| {
             let size = frame.area();
@@ -197,6 +202,7 @@ pub async fn run_tui(
                     warm_count: state.warm_count,
                     active_loading: state.active_loading,
                     indexing: state.indexing.as_ref(),
+                    memory: mem_sample,
                 },
             );
 

@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 use crate::app::IndexingProgress;
+use crate::sys_memory::{MemorySample, fmt_bytes};
 
 pub struct StatusBarView<'a> {
     pub active_tier: ModelTier,
@@ -17,6 +18,7 @@ pub struct StatusBarView<'a> {
     pub warm_count: usize,
     pub active_loading: bool,
     pub indexing: Option<&'a IndexingProgress>,
+    pub memory: MemorySample,
 }
 
 pub fn draw_status_bar(frame: &mut Frame, area: Rect, view: StatusBarView) {
@@ -28,6 +30,7 @@ pub fn draw_status_bar(frame: &mut Frame, area: Rect, view: StatusBarView) {
         warm_count,
         active_loading,
         indexing,
+        memory,
     } = view;
     let tier_label = match active_tier {
         ModelTier::Fast => "fast",
@@ -87,6 +90,37 @@ pub fn draw_status_bar(frame: &mut Frame, area: Rect, view: StatusBarView) {
         format!("{warm_count} warm"),
         Style::default().fg(warm_color),
     ));
+
+    if memory.rss_bytes > 0 {
+        spans.push(sep());
+        let rss_color = match memory.rss_bytes {
+            n if n > 16 * 1024 * 1024 * 1024 => Color::Red,
+            n if n > 8 * 1024 * 1024 * 1024 => Color::Yellow,
+            _ => Color::Green,
+        };
+        spans.push(Span::styled(
+            format!("RSS {}", fmt_bytes(memory.rss_bytes)),
+            Style::default().fg(rss_color),
+        ));
+    }
+
+    if memory.swap_total_bytes > 0 {
+        let pct = (memory.swap_used_bytes as f64 / memory.swap_total_bytes as f64) * 100.0;
+        if pct >= 10.0 {
+            spans.push(sep());
+            let color = if pct > 80.0 {
+                Color::Red
+            } else if pct > 50.0 {
+                Color::Yellow
+            } else {
+                Color::DarkGray
+            };
+            spans.push(Span::styled(
+                format!("swap {pct:.0}%"),
+                Style::default().fg(color),
+            ));
+        }
+    }
 
     if let Some(p) = indexing {
         spans.push(sep());

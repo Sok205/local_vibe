@@ -9,6 +9,7 @@ use ratatui::{
 };
 
 use crate::app::AppCommand;
+use crate::sys_memory::fmt_bytes;
 use crate::widgets::selectable_list::{Item, KeyOutcome, SelectableList};
 
 use super::SectionOutcome;
@@ -33,6 +34,9 @@ pub struct ModelRow {
     pub backend: String,
     pub state: LoadState,
     pub active: bool,
+    /// On-disk size of the model weights, in bytes. `0` when unknown (e.g.
+    /// for remote/cloud backends that have no local file).
+    pub size_bytes: u64,
 }
 
 /// Models section: one row per slot (chat tiers + embedding). Shows load
@@ -85,6 +89,11 @@ impl ModelsSection {
             LoadState::Loading => ("loading…", Color::Yellow),
             LoadState::Warm => ("warm", Color::Green),
         };
+        let size_text = if row.size_bytes > 0 {
+            fmt_bytes(row.size_bytes)
+        } else {
+            "—".to_string()
+        };
         let active_suffix = if row.active { "*" } else { " " };
         let active_style = if row.active {
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
@@ -99,6 +108,7 @@ impl ModelsSection {
                 format!("{:8}", row.backend),
                 Style::default().fg(Color::DarkGray),
             ),
+            Span::styled(format!("{size_text:>9}  "), Style::default().fg(Color::White)),
             Span::styled(state_text.to_string(), Style::default().fg(state_color)),
             Span::raw("  "),
             Span::styled(active_suffix.to_string(), Style::default().fg(Color::Cyan)),
@@ -269,6 +279,7 @@ mod tests {
             backend: "metal".into(),
             state: LoadState::Cold,
             active: false,
+            size_bytes: 0,
         };
         assert!(matches!(
             enter_cmd(Some(&row)),
@@ -284,6 +295,7 @@ mod tests {
             backend: "metal".into(),
             state: LoadState::Warm,
             active: false,
+            size_bytes: 0,
         };
         assert!(matches!(
             enter_cmd(Some(&row)),
@@ -299,6 +311,7 @@ mod tests {
             backend: "metal".into(),
             state: LoadState::Warm,
             active: true,
+            size_bytes: 0,
         };
         assert!(unload_cmd(Some(&row)).is_err());
     }

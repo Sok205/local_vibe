@@ -7,6 +7,7 @@ pub mod overlay;
 pub mod overlays;
 pub mod sections;
 pub mod status_bar;
+pub mod sys_memory;
 pub mod widgets;
 
 pub use app::{parse_input, run_tui, AppCommand, AppEvent, IndexingProgress};

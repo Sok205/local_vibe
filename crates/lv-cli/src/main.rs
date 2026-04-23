@@ -805,6 +805,12 @@ async fn build_model_rows(ctx: &Arc<AppContext>) -> Vec<lv_tui::overlays::ModelR
             backend: slot.backend.clone(),
             state: if warm.contains(&tier) { LoadState::Warm } else { LoadState::Cold },
             active: tier == active,
+            size_bytes: slot
+                .model_path
+                .as_deref()
+                .and_then(|p| std::fs::metadata(p).ok())
+                .map(|m| m.len())
+                .unwrap_or(0),
         });
     }
     if let Some(emb) = cfg.models.embedding.as_ref() {
@@ -814,6 +820,12 @@ async fn build_model_rows(ctx: &Arc<AppContext>) -> Vec<lv_tui::overlays::ModelR
             backend: emb.backend.clone(),
             state: if ctx.is_embedding_warm().await { LoadState::Warm } else { LoadState::Cold },
             active: false,
+            size_bytes: emb
+                .model_path
+                .as_deref()
+                .and_then(|p| std::fs::metadata(p).ok())
+                .map(|m| m.len())
+                .unwrap_or(0),
         });
     }
     rows
