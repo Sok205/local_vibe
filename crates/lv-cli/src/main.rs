@@ -193,6 +193,35 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
                     let rows = build_model_rows(&handler_ctx).await;
                     let _ = handler_event_tx.send(AppEvent::ModelsSnapshot(rows)).await;
                 }
+                AppCommand::Browse(db) => {
+                    let db = if db.is_empty() {
+                        handler_ctx.current_db().await
+                    } else {
+                        db
+                    };
+                    match handler_ctx.open_store_readonly(&db).await {
+                        Ok(store) => {
+                            let files = store.list_files(usize::MAX).await.unwrap_or_default();
+                            let chunks = store
+                                .stats()
+                                .await
+                                .map(|s| s.total_chunks)
+                                .unwrap_or(0);
+                            let _ = handler_event_tx
+                                .send(AppEvent::BrowseData {
+                                    db,
+                                    files,
+                                    total_chunks: chunks,
+                                })
+                                .await;
+                        }
+                        Err(e) => {
+                            let _ = handler_event_tx
+                                .send(AppEvent::Error(format!("browse '{db}': {e}")))
+                                .await;
+                        }
+                    }
+                }
                 AppCommand::LoadAndActivate(tier) => {
                     let _ = handler_event_tx.send(AppEvent::ModelLoading(tier)).await;
                     emit_models_snapshot(&handler_ctx, &handler_event_tx).await;

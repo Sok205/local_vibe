@@ -1,69 +1,120 @@
-use crossterm::event::{KeyCode, KeyEvent};
-use lv_core::status::{Readiness, StatusSnapshot};
+use crossterm::event::KeyEvent;
+use lv_core::status::{DbStatus, Readiness, StatusSnapshot};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
 };
 
+use crate::app::AppCommand;
 use crate::overlay::{centered, Overlay, OverlayAction};
+use crate::widgets::selectable_list::{Item, KeyOutcome, SelectableList};
 
 pub struct StatusOverlay {
     snapshot: StatusSnapshot,
+    dbs: SelectableList<DbStatus>,
 }
 
 impl StatusOverlay {
     pub fn new(snapshot: StatusSnapshot) -> Self {
-        Self { snapshot }
+        let dbs = Self::build_db_list(&snapshot.databases);
+        Self { snapshot, dbs }
+    }
+
+    fn build_db_list(dbs: &[DbStatus]) -> SelectableList<DbStatus> {
+        let items: Vec<Item<DbStatus>> = dbs
+            .iter()
+            .map(|db| {
+                let marker = if db.is_current { "*" } else { " " };
+                let head = format!(
+                    "{marker} {} — {} chunks, {} files, indexed {}",
+                    db.name,
+                    db.total_chunks,
+                    db.unique_files,
+                    db.indexed_at.as_deref().unwrap_or("-"),
+                );
+                let style = if db.is_current {
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                let mut spans = vec![Span::styled(head, style)];
+                if let Some(err) = &db.error {
+                    spans.push(Span::styled(
+                        format!("  [err: {err}]"),
+                        Style::default().fg(Color::Red),
+                    ));
+                } else if !db.languages.is_empty() {
+                    let preview: Vec<String> = db
+                        .languages
+                        .iter()
+                        .take(4)
+                        .map(|(k, v)| format!("{k}:{v}"))
+                        .collect();
+                    spans.push(Span::styled(
+                        format!("  — {}", preview.join(", ")),
+                        Style::default().fg(Color::Green),
+                    ));
+                }
+                Item::new(Line::from(spans), db.clone())
+            })
+            .collect();
+        SelectableList::new(items)
     }
 }
 
 impl Overlay for StatusOverlay {
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
-        draw_status_overlay(frame, area, &self.snapshot);
+        let outer = centered(area, 70, 80);
+
+        frame.render_widget(
+            Paragraph::new("").block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Status — ↑/↓ to navigate DBs, Enter to browse, Esc to close "),
+            ),
+            outer,
+        );
+
+        let inner = Rect {
+            x: outer.x + 1,
+            y: outer.y + 1,
+            width: outer.width.saturating_sub(2),
+            height: outer.height.saturating_sub(2),
+        };
+
+        let body = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(models_lines(&self.snapshot) as u16 + 2),
+                Constraint::Min(3),
+                Constraint::Length(4),
+            ])
+            .split(inner);
+
+        draw_models_block(frame, body[0], &self.snapshot);
+
+        self.dbs.draw(
+            frame,
+            body[1],
+            Block::default().borders(Borders::ALL).title(" Databases "),
+        );
+
+        draw_runtime_block(frame, body[2], &self.snapshot);
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> OverlayAction {
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => OverlayAction::Dismiss,
-            _ => OverlayAction::None,
+        match self.dbs.handle_key(key) {
+            KeyOutcome::Consumed | KeyOutcome::Unhandled | KeyOutcome::Key(_) => OverlayAction::None,
+            KeyOutcome::Escape => OverlayAction::Dismiss,
+            KeyOutcome::Activate(_) => match self.dbs.selected_meta() {
+                Some(db) => OverlayAction::RunCommand(AppCommand::Browse(db.name.clone())),
+                None => OverlayAction::None,
+            },
         }
     }
-}
-
-fn draw_status_overlay(frame: &mut Frame, area: Rect, snapshot: &StatusSnapshot) {
-    let outer = centered(area, 70, 80);
-
-    frame.render_widget(
-        Paragraph::new("").block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Status — press Esc to close "),
-        ),
-        outer,
-    );
-
-    let inner = Rect {
-        x: outer.x + 1,
-        y: outer.y + 1,
-        width: outer.width.saturating_sub(2),
-        height: outer.height.saturating_sub(2),
-    };
-
-    let body = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(models_lines(snapshot) as u16 + 2),
-            Constraint::Min(3),
-            Constraint::Length(4),
-        ])
-        .split(inner);
-
-    draw_models_block(frame, body[0], snapshot);
-    draw_databases_block(frame, body[1], snapshot);
-    draw_runtime_block(frame, body[2], snapshot);
 }
 
 fn models_lines(s: &StatusSnapshot) -> usize {
@@ -117,57 +168,6 @@ fn draw_models_block(frame: &mut Frame, area: Rect, s: &StatusSnapshot) {
     frame.render_widget(
         Paragraph::new(lines)
             .block(Block::default().borders(Borders::ALL).title(" Models ")),
-        area,
-    );
-}
-
-fn draw_databases_block(frame: &mut Frame, area: Rect, s: &StatusSnapshot) {
-    let mut lines: Vec<Line> = Vec::new();
-    if s.databases.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "  (no databases)",
-            Style::default().fg(Color::DarkGray),
-        )));
-    } else {
-        for db in &s.databases {
-            let marker = if db.is_current { "*" } else { " " };
-            let head = format!(
-                "{marker} {} — {} chunks, {} files, indexed {}",
-                db.name,
-                db.total_chunks,
-                db.unique_files,
-                db.indexed_at.as_deref().unwrap_or("-")
-            );
-            let head_style = if db.is_current {
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            };
-            lines.push(Line::from(Span::styled(head, head_style)));
-            if let Some(err) = &db.error {
-                lines.push(Line::from(Span::styled(
-                    format!("      error: {err}"),
-                    Style::default().fg(Color::Red),
-                )));
-            }
-            if !db.languages.is_empty() {
-                let preview: Vec<String> = db
-                    .languages
-                    .iter()
-                    .take(6)
-                    .map(|(k, v)| format!("{k}:{v}"))
-                    .collect();
-                lines.push(Line::from(Span::styled(
-                    format!("      {}", preview.join(", ")),
-                    Style::default().fg(Color::Green),
-                )));
-            }
-        }
-    }
-    frame.render_widget(
-        Paragraph::new(lines)
-            .wrap(Wrap { trim: false })
-            .block(Block::default().borders(Borders::ALL).title(" Databases ")),
         area,
     );
 }

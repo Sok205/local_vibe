@@ -7,7 +7,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use lv_core::status::StatusSnapshot;
-use lv_core::types::{Message, ModelTier, Role, SearchResult, StoreStats};
+use lv_core::types::{FileSummary, Message, ModelTier, Role, SearchResult, StoreStats};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -48,6 +48,7 @@ pub enum AppEvent {
     ModelUnloaded(ModelTier),
     ActiveTierChanged(ModelTier, String),
     WarmCountChanged(usize, bool),
+    BrowseData { db: String, files: Vec<FileSummary>, total_chunks: usize },
 }
 
 pub enum AppCommand {
@@ -57,6 +58,7 @@ pub enum AppCommand {
     SwitchDb(String),
     Status,
     Models,
+    Browse(String),
     LoadAndActivate(ModelTier),
     LoadModel(ModelTier),
     UnloadModel(ModelTier),
@@ -89,6 +91,12 @@ pub fn parse_input(line: &str) -> AppCommand {
     }
     if trimmed == "/models" {
         return AppCommand::Models;
+    }
+    if trimmed == "/browse" {
+        return AppCommand::Browse(String::new());
+    }
+    if let Some(rest) = trimmed.strip_prefix("/browse ") {
+        return AppCommand::Browse(rest.trim().to_string());
     }
     if trimmed == "/help" || trimmed == "/?" {
         return AppCommand::Help;
@@ -370,6 +378,10 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
         AppEvent::WarmCountChanged(n, active_loading) => {
             state.warm_count = n;
             state.active_loading = active_loading;
+        }
+        AppEvent::BrowseData { db, files, total_chunks } => {
+            use crate::overlays::BrowseOverlay;
+            state.overlay = Some(Box::new(BrowseOverlay::new(db, files, total_chunks)));
         }
     }
 }
