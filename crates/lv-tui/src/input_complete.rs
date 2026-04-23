@@ -1,21 +1,14 @@
 use std::path::{Path, PathBuf};
 
-const INDEX_PREFIX: &str = "/index ";
-
-/// Complete an `/index <partial-path>` line to the longest common prefix of
-/// matching filesystem entries. Returns `None` when the input doesn't start
-/// with `/index `, when there's no partial path to complete, or when there
-/// are no candidates that extend the current stem.
-pub fn complete_index_line(line: &str) -> Option<String> {
-    let partial = line.strip_prefix(INDEX_PREFIX)?;
-
-    let space_idx = partial.find(char::is_whitespace).unwrap_or(partial.len());
-    let (partial_path, tail) = partial.split_at(space_idx);
-    if partial_path.is_empty() {
+/// Complete a partial filesystem path to the longest common prefix of
+/// matching directory entries. Returns `None` when the partial is empty or
+/// when no completion extends what the user already typed.
+pub fn complete_path(partial: &str) -> Option<String> {
+    if partial.is_empty() {
         return None;
     }
 
-    let (parent, stem) = split_parent_stem(Path::new(partial_path));
+    let (parent, stem) = split_parent_stem(Path::new(partial));
     let entries = std::fs::read_dir(&parent).ok()?;
 
     let mut candidates: Vec<String> = Vec::new();
@@ -42,9 +35,9 @@ pub fn complete_index_line(line: &str) -> Option<String> {
         return None;
     }
 
-    let had_trailing_slash = partial_path.ends_with('/');
+    let had_trailing_slash = partial.ends_with('/');
     let parent_str = parent.to_string_lossy();
-    let joined = if parent_str == "." && !partial_path.starts_with("./") {
+    let joined = if parent_str == "." && !partial.starts_with("./") {
         lcp
     } else if parent_str.ends_with('/') || had_trailing_slash && stem.is_empty() {
         format!("{parent_str}{lcp}")
@@ -52,7 +45,7 @@ pub fn complete_index_line(line: &str) -> Option<String> {
         format!("{parent_str}/{lcp}")
     };
 
-    Some(format!("{INDEX_PREFIX}{joined}{tail}"))
+    Some(joined)
 }
 
 fn split_parent_stem(path: &Path) -> (PathBuf, String) {
@@ -98,14 +91,8 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn non_index_line_returns_none() {
-        assert!(complete_index_line("hello world").is_none());
-        assert!(complete_index_line("/browse xyz").is_none());
-    }
-
-    #[test]
     fn empty_partial_returns_none() {
-        assert!(complete_index_line("/index ").is_none());
+        assert!(complete_path("").is_none());
     }
 
     #[test]
@@ -117,22 +104,18 @@ mod tests {
         let prev = std::env::current_dir().unwrap();
         std::env::set_current_dir(td.path()).unwrap();
 
-        let got = complete_index_line("/index alpha");
+        let got = complete_path("alpha");
         std::env::set_current_dir(prev).unwrap();
 
-        // LCP of "alpha-project/" and "alpha-notes/" is "alpha-"
-        assert_eq!(got.as_deref(), Some("/index alpha-"));
+        assert_eq!(got.as_deref(), Some("alpha-"));
     }
 
     #[test]
-    fn returns_none_when_no_longer_prefix_possible() {
+    fn returns_some_with_trailing_slash_for_single_dir_match() {
         let td = tempdir().unwrap();
         std::fs::create_dir(td.path().join("foo")).unwrap();
-        // User already typed the full stem that happens to be the only match.
         let path = td.path().join("foo").to_string_lossy().into_owned();
-        let line = format!("/index {path}");
-        let got = complete_index_line(&line);
-        // One match → LCP "foo/" extends the stem
+        let got = complete_path(&path);
         assert!(got.as_deref().unwrap().ends_with('/'));
     }
 

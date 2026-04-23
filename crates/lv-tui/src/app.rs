@@ -24,7 +24,7 @@ use crate::{
     overlays::HelpOverlay,
     sections::{
         Section, SectionOutcome, chat::ChatSection, databases::DatabasesSection,
-        models::ModelsSection, placeholder::PlaceholderSection,
+        index::IndexSection, models::ModelsSection, placeholder::PlaceholderSection,
     },
     status_bar::{StatusBarView, draw_status_bar},
     widgets::sidebar::draw_sidebar,
@@ -94,7 +94,7 @@ struct AppState {
     chat_section: ChatSection,
     models_section: ModelsSection,
     databases_section: DatabasesSection,
-    index_section: PlaceholderSection,
+    index_section: IndexSection,
     settings_section: PlaceholderSection,
     model_tier: ModelTier,
     model_name: String,
@@ -113,7 +113,7 @@ impl AppState {
             chat_section: ChatSection::new(),
             models_section: ModelsSection::new(),
             databases_section: DatabasesSection::new(),
-            index_section: PlaceholderSection::index(),
+            index_section: IndexSection::new(),
             settings_section: PlaceholderSection::settings(),
             model_tier: ModelTier::Fast,
             model_name: "unknown".to_string(),
@@ -131,7 +131,7 @@ impl AppState {
             Section::Chat => self.chat_section.draw(frame, area),
             Section::Models => self.models_section.draw(frame, area),
             Section::Databases => self.databases_section.draw(frame, area),
-            Section::Index => self.index_section.draw(frame, area),
+            Section::Index => self.index_section.draw(frame, area, self.indexing.as_ref()),
             Section::Settings => self.settings_section.draw(frame, area),
         }
     }
@@ -252,6 +252,9 @@ pub async fn run_tui(
                     Section::Databases => {
                         let _ = command_tx.send(AppCommand::Status).await;
                     }
+                    Section::Index => {
+                        state.index_section.prefill_db(&state.current_db);
+                    }
                     _ => {}
                 }
                 continue;
@@ -342,6 +345,7 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
         }
         AppEvent::IndexDone { indexed, skipped, failed } => {
             state.indexing = None;
+            state.index_section.on_index_done(indexed, skipped, failed);
             state.chat_section.chat.push_message(Message {
                 role: Role::System,
                 content: format!("Indexed {indexed}, skipped {skipped}, failed {failed}."),
