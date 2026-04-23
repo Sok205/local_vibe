@@ -7,31 +7,23 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
+use crate::commands::COMMANDS;
 use crate::overlay::{centered, Overlay, OverlayAction};
 
-struct Entry {
-    command: &'static str,
+struct KeyEntry {
+    key: &'static str,
     description: &'static str,
 }
 
-const COMMANDS: &[Entry] = &[
-    Entry { command: "/help, /?",        description: "show this help" },
-    Entry { command: "/status",          description: "models, DBs, runtime — Enter on a DB drills into browse" },
-    Entry { command: "/models",          description: "load / unload / activate models" },
-    Entry { command: "/browse [db]",     description: "browse files inside a DB" },
-    Entry { command: "/dbs",             description: "list indexed DBs" },
-    Entry { command: "/db <name>",       description: "switch current DB" },
-    Entry { command: "/index [path]",    description: "index a directory (no args = picker)" },
-    Entry { command: "/quit",            description: "exit" },
-];
-
-const KEYS: &[Entry] = &[
-    Entry { command: "Enter",            description: "submit input (or activate in overlays)" },
-    Entry { command: "Up / Down, j / k", description: "scroll chat / navigate list" },
-    Entry { command: "/",                description: "start fuzzy filter inside a list" },
-    Entry { command: "Tab",              description: "toggle context panel (or complete /index path)" },
-    Entry { command: "Ctrl+C, Ctrl+Q",   description: "quit" },
-    Entry { command: "Esc / q",          description: "dismiss overlay" },
+const KEYS: &[KeyEntry] = &[
+    KeyEntry { key: "/",                description: "open the command palette; filters as you type" },
+    KeyEntry { key: "Enter",            description: "submit input (or run selected command / activate in overlays)" },
+    KeyEntry { key: "Up / Down, j / k", description: "scroll chat / navigate palette / navigate lists" },
+    KeyEntry { key: "Tab after /index ",description: "complete the partial path" },
+    KeyEntry { key: "Tab (chat)",       description: "toggle the context panel" },
+    KeyEntry { key: "1–9 in /browse",   description: "filter by language pill; 0 clears" },
+    KeyEntry { key: "Ctrl+C, Ctrl+Q",   description: "quit" },
+    KeyEntry { key: "Esc / q",          description: "dismiss overlay / palette" },
 ];
 
 pub struct HelpOverlay;
@@ -83,19 +75,53 @@ fn draw_help_overlay(frame: &mut Frame, area: Rect) {
         ])
         .split(inner);
 
-    draw_section(frame, body[0], " Slash commands ", COMMANDS);
-    draw_section(frame, body[1], " Keys ", KEYS);
+    draw_commands(frame, body[0]);
+    draw_keys(frame, body[1]);
 }
 
-fn draw_section(frame: &mut Frame, area: Rect, title: &str, entries: &[Entry]) {
-    let col_width = entries.iter().map(|e| e.command.len()).max().unwrap_or(0) + 2;
+fn draw_commands(frame: &mut Frame, area: Rect) {
+    let col_width = COMMANDS
+        .iter()
+        .map(|c| c.name.len() + if c.takes_args { 6 } else { 0 })
+        .max()
+        .unwrap_or(0)
+        + 2;
 
-    let lines: Vec<Line> = entries
+    let lines: Vec<Line> = COMMANDS
+        .iter()
+        .map(|c| {
+            let label = if c.takes_args {
+                format!("{} <arg>", c.name)
+            } else {
+                c.name.to_string()
+            };
+            Line::from(vec![
+                Span::styled(
+                    format!("  {:<width$}", label, width = col_width),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(c.description),
+            ])
+        })
+        .collect();
+
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::default().borders(Borders::ALL).title(" Slash commands ")),
+        area,
+    );
+}
+
+fn draw_keys(frame: &mut Frame, area: Rect) {
+    let col_width = KEYS.iter().map(|e| e.key.len()).max().unwrap_or(0) + 2;
+    let lines: Vec<Line> = KEYS
         .iter()
         .map(|e| {
             Line::from(vec![
                 Span::styled(
-                    format!("  {:<width$}", e.command, width = col_width),
+                    format!("  {:<width$}", e.key, width = col_width),
                     Style::default()
                         .fg(Color::Yellow)
                         .add_modifier(Modifier::BOLD),
@@ -104,10 +130,9 @@ fn draw_section(frame: &mut Frame, area: Rect, title: &str, entries: &[Entry]) {
             ])
         })
         .collect();
-
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::default().borders(Borders::ALL).title(title.to_string())),
+            .block(Block::default().borders(Borders::ALL).title(" Keys ")),
         area,
     );
 }

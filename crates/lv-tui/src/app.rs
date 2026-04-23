@@ -21,11 +21,13 @@ use tracing::error;
 
 use crate::{
     chat_view::ChatView,
+    commands::is_palette_prefix,
     context_panel::ContextPanel,
     input::{InputAction, InputBuffer},
     overlay::{Overlay, OverlayAction},
     overlays::{HelpOverlay, StatusOverlay},
     status_bar::{draw_status_bar, StatusBarView},
+    widgets::palette::CommandPalette,
 };
 
 pub enum AppEvent {
@@ -137,6 +139,7 @@ struct AppState {
     overlay: Option<Box<dyn Overlay>>,
     warm_count: usize,
     active_loading: bool,
+    palette: CommandPalette,
 }
 
 impl AppState {
@@ -153,6 +156,7 @@ impl AppState {
             overlay: None,
             warm_count: 0,
             active_loading: false,
+            palette: CommandPalette::new(),
         }
     }
 }
@@ -241,6 +245,12 @@ pub async fn run_tui(
             let cursor_y = rows[2].y + 1;
             frame.set_cursor_position((cursor_x, cursor_y));
 
+            // Command palette floats above the input when in palette mode.
+            let current_input = state.input.as_str();
+            if state.palette.visible(&current_input) && state.overlay.is_none() {
+                state.palette.draw(frame, rows[2], &current_input);
+            }
+
             if let Some(overlay) = state.overlay.as_mut() {
                 overlay.draw(frame, size);
             }
@@ -266,6 +276,70 @@ pub async fn run_tui(
                 {
                     state.input.set_from(&completed);
                     continue;
+                }
+            }
+
+            // Command palette: intercepts nav + Enter while the input is a
+            // slash-prefix with no whitespace. Any other key flows through to
+            // the input buffer as normal.
+            {
+                let current = state.input.as_str();
+                if is_palette_prefix(&current) {
+                    match key.code {
+                        KeyCode::Up => {
+                            state.palette.move_up(&current);
+                            continue;
+                        }
+                        KeyCode::Down | KeyCode::Tab => {
+                            state.palette.move_down(&current);
+                            continue;
+                        }
+                        KeyCode::Esc => {
+                            state.input.clear();
+                            state.palette.reset_selection();
+                            continue;
+                        }
+                        KeyCode::Enter => {
+                            if let Some(spec) = state.palette.selected_spec(&current) {
+                                if spec.takes_args {
+                                    state.input.set_from(&format!("{} ", spec.name));
+                                    state.palette.reset_selection();
+                                    continue;
+                                }
+                                // No-arg command: run via normal submit path.
+                                let cmd = parse_input(spec.name);
+                                state.input.clear();
+                                state.palette.reset_selection();
+                                match &cmd {
+                                    AppCommand::Quit => {
+                                        let _ = command_tx.send(AppCommand::Quit).await;
+                                        break;
+                                    }
+                                    AppCommand::Help => {
+                                        state.overlay = Some(Box::new(HelpOverlay));
+                                        continue;
+                                    }
+                                    AppCommand::OpenPicker => {
+                                        let start = std::env::current_dir()
+                                            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+                                        match crate::overlays::PickerOverlay::new(&start) {
+                                            Ok(o) => state.overlay = Some(Box::new(o)),
+                                            Err(e) => state.chat.push_message(Message {
+                                                role: Role::System,
+                                                content: format!("picker: {e}"),
+                                            }),
+                                        }
+                                        continue;
+                                    }
+                                    _ => {}
+                                }
+                                let _ = command_tx.send(cmd).await;
+                                continue;
+                            }
+                            // No matches: fall through so Enter submits the raw text.
+                        }
+                        _ => {}
+                    }
                 }
             }
             let action = state.input.handle_key(key);

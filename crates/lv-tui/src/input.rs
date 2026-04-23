@@ -79,4 +79,9 @@ impl InputBuffer {
         self.buf = s.chars().collect();
         self.cursor = self.buf.len();
     }
+
+    pub fn clear(&mut self) {
+        self.buf.clear();
+        self.cursor = 0;
+    }
 }

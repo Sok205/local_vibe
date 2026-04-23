@@ -1,5 +1,6 @@
 pub mod app;
 pub mod chat_view;
+pub mod commands;
 pub mod context_panel;
 pub mod input;
 pub mod input_complete;
