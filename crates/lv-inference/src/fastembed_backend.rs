@@ -3,6 +3,7 @@ use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use lv_core::error::VibeError;
 use lv_core::traits::EmbeddingBackend;
 use lv_core::Result;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 pub struct FastEmbedBackend {
@@ -24,8 +25,17 @@ impl FastEmbedBackend {
                 )));
             }
         };
+        let cache_dir = resolve_cache_dir();
+        if let Err(e) = std::fs::create_dir_all(&cache_dir) {
+            return Err(VibeError::Embedding(format!(
+                "fastembed cache dir {}: {e}",
+                cache_dir.display()
+            )));
+        }
         let model = TextEmbedding::try_new(
-            InitOptions::new(embedding_model).with_show_download_progress(true),
+            InitOptions::new(embedding_model)
+                .with_cache_dir(cache_dir)
+                .with_show_download_progress(true),
         )
         .map_err(|e| VibeError::Embedding(format!("fastembed init: {e}")))?;
         Ok(Self {
@@ -64,4 +74,21 @@ impl EmbeddingBackend for FastEmbedBackend {
     fn model_name(&self) -> &str {
         &self.model_name
     }
+}
+
+/// Resolve a stable cache directory for fastembed weights.
+/// Honors `HF_HOME` (fastembed's own knob) if set; otherwise pins to
+/// `dirs::cache_dir()/local-vibe/fastembed`. Falls back to the cwd-relative
+/// default only as a last resort. This matters when `lv serve` is spawned by
+/// an MCP client (Zed, Claude Code) whose cwd isn't the project directory.
+fn resolve_cache_dir() -> PathBuf {
+    if let Ok(hf_home) = std::env::var("HF_HOME")
+        && !hf_home.is_empty()
+    {
+        return PathBuf::from(hf_home);
+    }
+    if let Some(base) = dirs::cache_dir() {
+        return base.join("local-vibe").join("fastembed");
+    }
+    PathBuf::from(".fastembed_cache")
 }
