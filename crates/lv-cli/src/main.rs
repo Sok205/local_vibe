@@ -37,6 +37,10 @@ enum Command {
     Index {
         /// Path to index (default: current directory)
         path: Option<String>,
+        /// Named DB to index into. Requires `[rag].db_root`. Creates the DB if missing.
+        /// When omitted, indexes into the current default DB.
+        #[arg(long, value_name = "NAME")]
+        db: Option<String>,
     },
     /// Start MCP server on stdio
     Serve {
@@ -124,9 +128,9 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         None => run_interactive(config).await,
         Some(Command::Ask { question }) => run_ask(config, &question).await,
-        Some(Command::Index { path }) => {
+        Some(Command::Index { path, db }) => {
             let p = path.unwrap_or_else(|| ".".to_string());
-            run_index(config, &p).await
+            run_index(config, &p, db.as_deref()).await
         }
         Some(Command::Serve { tier }) => run_serve(config, tier).await,
         Some(Command::Http { host, port, tier }) => run_http(config, host, port, tier).await,
@@ -606,7 +610,7 @@ async fn index_with_progress(
     let _ = handle.await;
 }
 
-async fn run_index(config: Config, path: &str) -> anyhow::Result<()> {
+async fn run_index(config: Config, path: &str, db: Option<&str>) -> anyhow::Result<()> {
     use lv_rag::chunker::OverlappingChunker;
     use lv_rag::indexer::IndexManager;
     use lv_rag::parsers::{epub::EpubParser, html::HtmlParser, pdf::PdfParser, text::TextParser};
@@ -618,8 +622,15 @@ async fn run_index(config: Config, path: &str) -> anyhow::Result<()> {
              Set [models.embedding] in local-vibe.toml to enable RAG."
         );
     };
-    let store = ctx.store().await?;
-    let db_name = ctx.current_db().await;
+    let (store, db_name) = match db {
+        Some(name) => (
+            ctx.store_named(name)
+                .await
+                .with_context(|| format!("opening DB '{name}'"))?,
+            name.to_string(),
+        ),
+        None => (ctx.store().await?, ctx.current_db().await),
+    };
     let db_path = ctx.db_path_for(&db_name)?;
 
     let parsers: Vec<Box<dyn lv_core::traits::Parser>> = vec![
