@@ -15,6 +15,8 @@ use lv_rag::query::QueryEngine;
 use lv_tui::{run_tui, AppCommand, AppEvent};
 
 mod app_context;
+mod http_server;
+mod openai;
 use app_context::AppContext;
 
 #[derive(Parser)]
@@ -40,6 +42,18 @@ enum Command {
     Serve {
         /// Pre-load a chat tier at startup (fast, medium, strong).
         /// Omit to keep all models lazy (load on first use).
+        #[arg(long, value_name = "TIER")]
+        tier: Option<String>,
+    },
+    /// Start an OpenAI-compatible HTTP server (chat completions + tool use)
+    Http {
+        /// Bind address (default 127.0.0.1)
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// Port (default 8080)
+        #[arg(long, default_value_t = 8080)]
+        port: u16,
+        /// Pre-load a chat tier at startup (fast, medium, strong).
         #[arg(long, value_name = "TIER")]
         tier: Option<String>,
     },
@@ -115,6 +129,7 @@ async fn main() -> anyhow::Result<()> {
             run_index(config, &p).await
         }
         Some(Command::Serve { tier }) => run_serve(config, tier).await,
+        Some(Command::Http { host, port, tier }) => run_http(config, host, port, tier).await,
         Some(Command::Models) => run_models(&config),
         Some(Command::Stats) => run_stats(config).await,
         Some(Command::Status { json }) => run_status(config, json).await,
@@ -638,6 +653,23 @@ async fn run_index(config: Config, path: &str) -> anyhow::Result<()> {
         tracing::warn!("failed to write sidecar for '{db_name}': {e}");
     }
     Ok(())
+}
+
+async fn run_http(
+    config: Config,
+    host: String,
+    port: u16,
+    tier: Option<String>,
+) -> anyhow::Result<()> {
+    let ctx: Arc<AppContext> = Arc::new(AppContext::new(config));
+    let preload = match tier {
+        Some(t) => Some(parse_tier(&t)?),
+        None => None,
+    };
+    let addr: std::net::SocketAddr = format!("{host}:{port}")
+        .parse()
+        .with_context(|| format!("invalid bind address {host}:{port}"))?;
+    http_server::serve_http(ctx, addr, preload).await
 }
 
 async fn run_serve(config: Config, tier: Option<String>) -> anyhow::Result<()> {
