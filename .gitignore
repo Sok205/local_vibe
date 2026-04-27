@@ -1,3 +1,9 @@
 target/
 .superpowers/
 .fastembed_cache/
+
+# LanceDB / vector index caches under knowledge-base
+data/knowledge-base/**/*.lance
+data/knowledge-base/**/*.txn
+data/knowledge-base/**/*.manifest
+data/knowledge-base/**/ai4_db/
