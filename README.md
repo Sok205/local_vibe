@@ -144,6 +144,7 @@ lv dbs                # list DB names (single line each; --json available)
 lv ls <db>            # list files in a DB (--limit N, --json available)
 lv models             # print the configured backend for each tier
 lv serve              # MCP server on stdio (for Claude Code etc.)
+lv http               # OpenAI-compatible HTTP server (chat completions + tool use)
 lv --help
 ```
 
@@ -274,6 +275,98 @@ JSON-RPC frames on stdout.
 
 ---
 
+## Use as an HTTP server (OpenAI-compatible)
+
+`lv http` exposes the in-process Candle backend behind an OpenAI Chat
+Completions API on localhost. Any OpenAI-compatible client (Zed AI,
+[`claude-code-router`](https://github.com/musistudio/claude-code-router),
+generic SDKs) can drive it.
+
+```bash
+lv http                              # 127.0.0.1:8080, lazy model load
+lv http --tier medium                # pre-load the medium tier on startup
+lv http --host 0.0.0.0 --port 9000   # bind elsewhere
+```
+
+Endpoints:
+
+| Method + path                | Behavior                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| `GET  /health`               | `{"status":"ok"}`                                                        |
+| `GET  /v1/models`            | lists `fast` / `medium` / `strong` aliases plus the configured names     |
+| `POST /v1/chat/completions`  | OpenAI Chat Completions; streaming (SSE) and non-streaming both supported |
+
+The `model` field accepts `"fast"` / `"medium"` / `"strong"` (mapped to
+the matching `[models.<tier>]` slot) or any of your configured model
+names. Unknown values fall back to `medium`.
+
+### Tool use
+
+Tool calling is layered at the HTTP boundary. When a request includes a
+`tools` array, `lv http`:
+
+1. Renders the tool catalog as a Hermes-format JSON block and merges it
+   into the system message.
+2. Forces non-streaming for that turn so the full response can be
+   parsed.
+3. Extracts every `<tool_call>{...}</tool_call>` from the model output
+   and returns them as OpenAI-shaped `tool_calls` with
+   `finish_reason: "tool_calls"`.
+
+This keeps `InferenceBackend` text-in / text-out and means tool support
+works on any model that can follow the format prompt (Qwen 2.5 / 3 /
+3-Coder, etc.). Models without explicit tool training will be less
+reliable; treat tool support as best-effort on small generalist models.
+
+### Hybrid stack with llama.cpp (for qwen35 etc.)
+
+Candle currently has no backend for the Qwen 3.5 / 3.6 hybrid-SSM
+architecture (`general.architecture = "qwen35"`). Until Candle adds
+support, the recommended way to run those models is to keep `lv` for
+RAG, MCP, and the architectures it does serve, and run `llama-server`
+from `llama.cpp` alongside it for the rest:
+
+```bash
+brew install llama.cpp           # or build from source
+
+# Start llama-server on a different port; --jinja enables the model's
+# native tool-call template.
+llama-server \
+  -m ~/Models/.../Qwen3.6-27B-Q6_K.gguf \
+  --host 127.0.0.1 --port 8081 \
+  --jinja -c 32768 -ngl 99 \
+  --alias qwen3.6-27b
+```
+
+Suggested topology:
+
+```
+Claude Code / Zed AI ─┬─→ lv http     :8080  (qwen2 / qwen3 via Candle)
+                      └─→ llama-server :8081  (qwen35 / hybrid SSM)
+
+lv serve  (stdio)  ←  Claude Code MCP  (RAG over your indexed corpus)
+```
+
+A passthrough backend in `lv http` (so a single endpoint forwards to
+either Candle or llama-server based on tier) is on the roadmap; until
+then, point your client at the right port for the model you want.
+
+For Qwen 3.x thinking models, suppress the chain-of-thought trace on
+short calls with `chat_template_kwargs.enable_thinking: false`:
+
+```bash
+curl -s http://127.0.0.1:8081/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{
+    "model":"qwen3.6-27b",
+    "messages":[{"role":"user","content":"one word: lambda"}],
+    "max_tokens":50,
+    "chat_template_kwargs":{"enable_thinking":false}
+  }'
+```
+
+---
+
 ## Per-DB metadata sidecar
 
 Every successful index writes a `.lv-meta.toml` next to the LanceDB
@@ -314,7 +407,7 @@ Working end-to-end today:
 
 Known gaps / rough edges:
 
-- **Qwen 3.5 hybrid SSM** — Candle has no backend for `general.architecture = "qwen35"`; use Qwen 2.5 or Llama / Gemma for now.
+- **Qwen 3.5 hybrid SSM** — Candle has no backend for `general.architecture = "qwen35"`. Run those models alongside `lv` via `llama-server` from `llama.cpp` (see *Hybrid stack with llama.cpp* above). A passthrough backend so `lv http` can forward to llama-server is on the roadmap.
 - **Embedding unload** — the embedding row in Models is display-only; embedding uses a separate lazy-init path.
 - **Cloud tier** — the config slot exists but loading `ModelTier::Cloud` is not wired up; use local tiers for now.
 - **`fastembed` cache is cwd-relative** (fastembed 5.x default). Gitignore
