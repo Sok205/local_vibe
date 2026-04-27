@@ -789,6 +789,7 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 [[package]]
 name = "candle-core"
 version = "0.10.2"
+source = "git+https://github.com/Sok205/candle?rev=235f1e9#235f1e97385afe0b33f73b6c970571d08f18eab1"
 dependencies = [
  "byteorder",
  "candle-metal-kernels",
@@ -815,6 +816,7 @@ dependencies = [
 [[package]]
 name = "candle-metal-kernels"
 version = "0.10.2"
+source = "git+https://github.com/Sok205/candle?rev=235f1e9#235f1e97385afe0b33f73b6c970571d08f18eab1"
 dependencies = [
  "half",
  "objc2",
@@ -828,6 +830,7 @@ dependencies = [
 [[package]]
 name = "candle-nn"
 version = "0.10.2"
+source = "git+https://github.com/Sok205/candle?rev=235f1e9#235f1e97385afe0b33f73b6c970571d08f18eab1"
 dependencies = [
  "candle-core",
  "candle-metal-kernels",
@@ -844,6 +847,7 @@ dependencies = [
 [[package]]
 name = "candle-transformers"
 version = "0.10.2"
+source = "git+https://github.com/Sok205/candle?rev=235f1e9#235f1e97385afe0b33f73b6c970571d08f18eab1"
 dependencies = [
  "byteorder",
  "candle-core",
@@ -861,6 +865,7 @@ dependencies = [
 [[package]]
 name = "candle-ug"
 version = "0.10.2"
+source = "git+https://github.com/Sok205/candle?rev=235f1e9#235f1e97385afe0b33f73b6c970571d08f18eab1"
 dependencies = [
  "ug",
  "ug-metal",
