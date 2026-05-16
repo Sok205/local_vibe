@@ -82,6 +82,9 @@ pub struct IndexDirectoryParams {
 #[derive(Clone)]
 pub struct VibeMcpServer {
     host: Arc<dyn AppHost>,
+    // Constructed by `Self::tool_router()` and consumed by rmcp's
+    // `#[tool_handler]` macro at dispatch time; the macro reads it via
+    // a path the compiler can't see, so it looks unused.
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }

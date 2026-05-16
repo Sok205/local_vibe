@@ -25,6 +25,12 @@ fn sanitize_sql_value(value: &str) -> String {
     value.replace('\'', "''")
 }
 
+fn col<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a ArrayRef> {
+    batch
+        .column_by_name(name)
+        .ok_or_else(|| VibeError::Store(format!("missing column in record batch: {name}")))
+}
+
 impl LanceStore {
     pub async fn new(db_path: &str, dimension: usize) -> Result<Self> {
         let db = connect(db_path)
@@ -217,23 +223,12 @@ impl lv_core::traits::VectorStore for LanceStore {
 
         let mut search_results = Vec::new();
         for batch in &batches {
-            let texts = batch.column_by_name("text").unwrap().as_string::<i32>();
-            let file_paths = batch
-                .column_by_name("file_path")
-                .unwrap()
-                .as_string::<i32>();
-            let file_names = batch
-                .column_by_name("file_name")
-                .unwrap()
-                .as_string::<i32>();
-            let chunk_indices = batch
-                .column_by_name("chunk_index")
-                .unwrap()
-                .as_primitive::<arrow_array::types::UInt32Type>();
-            let distances = batch
-                .column_by_name("_distance")
-                .unwrap()
-                .as_primitive::<Float32Type>();
+            let texts = col(batch, "text")?.as_string::<i32>();
+            let file_paths = col(batch, "file_path")?.as_string::<i32>();
+            let file_names = col(batch, "file_name")?.as_string::<i32>();
+            let chunk_indices =
+                col(batch, "chunk_index")?.as_primitive::<arrow_array::types::UInt32Type>();
+            let distances = col(batch, "_distance")?.as_primitive::<Float32Type>();
 
             for i in 0..batch.num_rows() {
                 let distance = distances.value(i);
@@ -329,12 +324,12 @@ impl lv_core::traits::VectorStore for LanceStore {
             .await
             .map_err(|e| VibeError::Store(format!("Failed to read batch: {e}")))?
         {
-            let hashes = batch
-                .column_by_name("file_hash")
-                .unwrap()
+            let hashes = col(&batch, "file_hash")?
                 .as_any()
                 .downcast_ref::<StringArray>()
-                .unwrap();
+                .ok_or_else(|| {
+                    VibeError::Store("file_hash column has unexpected type".to_string())
+                })?;
             for i in 0..hashes.len() {
                 let val = hashes.value(i);
                 if !unique_hashes.contains(val) {
@@ -371,12 +366,12 @@ impl lv_core::traits::VectorStore for LanceStore {
             .await
             .map_err(|e| VibeError::Store(format!("Failed to read batch: {e}")))?
         {
-            let paths = batch
-                .column_by_name("file_path")
-                .unwrap()
+            let paths = col(&batch, "file_path")?
                 .as_any()
                 .downcast_ref::<StringArray>()
-                .unwrap();
+                .ok_or_else(|| {
+                    VibeError::Store("file_path column has unexpected type".to_string())
+                })?;
             let langs = batch
                 .column_by_name("language")
                 .and_then(|c| c.as_any().downcast_ref::<StringArray>());

@@ -27,7 +27,6 @@ walkdir = "2"
 pdf-extract = "0.7"
 scraper = "0.22"
 epub = "2"
-rayon = "1"
 rustc-hash = "2"
 tokio-util = { version = "0.7", features = ["rt"] }
 futures = "0.3"

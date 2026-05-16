@@ -1,3 +1,6 @@
+//! Inference backends for LocalVibe: fastembed (ONNX embeddings),
+//! llama.cpp (HTTP shim), and MLX (Apple Silicon-optimized chat).
+
 pub mod fastembed_backend;
 pub mod mlx_lm;
 

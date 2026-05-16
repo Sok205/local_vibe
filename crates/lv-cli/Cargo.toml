@@ -12,6 +12,13 @@ keywords.workspace = true
 categories.workspace = true
 
 [[bin]]
+name = "localvibe"
+path = "src/main.rs"
+
+# `lv` is kept as an alias for back-compat and convenience, even though
+# the canonical binary is `localvibe` (avoids collision with the Linux
+# LVM `lv` tool and the `lv` Japanese text viewer).
+[[bin]]
 name = "lv"
 path = "src/main.rs"
 

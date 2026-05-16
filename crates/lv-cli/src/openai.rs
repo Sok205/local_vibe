@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
 pub struct ChatCompletionRequest {
     pub model: String,
     pub messages: Vec<ChatMessage>,
@@ -13,10 +12,6 @@ pub struct ChatCompletionRequest {
     pub stream: Option<bool>,
     #[serde(default)]
     pub tools: Option<Vec<Tool>>,
-    #[serde(default)]
-    pub tool_choice: Option<serde_json::Value>,
-    #[serde(default)]
-    pub user: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

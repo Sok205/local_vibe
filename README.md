@@ -1,4 +1,7 @@
-# local-vibe (`lv`)
+# local-vibe (`localvibe` / `lv`)
+
+[![CI](https://github.com/Sok205/local_vibe/actions/workflows/ci.yml/badge.svg)](https://github.com/Sok205/local_vibe/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 Pure-Rust local coding assistant: chat with a quantized LLM on Metal,
 index any directory with on-device ONNX embeddings, search it with
@@ -7,6 +10,8 @@ LanceDB, all from one ratatui TUI.
 Runs on Apple Silicon (M1–M4). Candle + Metal for inference,
 [fastembed-rs](https://crates.io/crates/fastembed) for embeddings,
 [LanceDB](https://lancedb.com) for vectors.
+
+> _A TUI screenshot will live here once one is captured — see `docs/screenshots/`._
 
 ---
 
@@ -17,8 +22,8 @@ GGUF model supported by Candle (qwen2 / llama family — Qwen 3.5 hybrid
 SSM is **not** supported).
 
 ```bash
-# 1. install the `lv` binary
-git clone <this repo> ~/code/local_vibe
+# 1. install the `localvibe` binary (`lv` alias is also installed)
+git clone https://github.com/Sok205/local_vibe ~/code/local_vibe
 cd ~/code/local_vibe
 cargo install --path crates/lv-cli
 
@@ -435,3 +440,19 @@ cargo install --path crates/lv-cli --force
 ```
 
 Design specs for recent work live in `docs/superpowers/specs/`.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md). All contributions are dual-licensed
+under MIT and Apache-2.0, the same terms as the rest of the project.
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](./LICENSE-APACHE) or
+  <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](./LICENSE-MIT) or
+  <http://opensource.org/licenses/MIT>)
+
+at your option.

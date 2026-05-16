@@ -1,3 +1,6 @@
+//! Apple Silicon Metal inference backend for LocalVibe, built on candle.
+//! Loads GGUF quantized models and runs them through the Metal pipeline.
+
 pub mod model;
 pub mod sampler;
 pub mod tokenizer;

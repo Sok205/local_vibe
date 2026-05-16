@@ -26,7 +26,6 @@ pub struct AppContext {
     code_graph: OnceCell<Arc<RwLock<TreeSitterGraph>>>,
 }
 
-#[allow(dead_code)]
 impl AppContext {
     pub fn new(config: Config) -> Self {
         Self {

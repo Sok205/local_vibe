@@ -37,5 +37,9 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo clippy ${{ matrix.workspace_args }} --all-targets -- -D warnings
       - run: cargo test ${{ matrix.workspace_args }} --no-fail-fast

@@ -1,3 +1,6 @@
+//! Ratatui-based terminal UI for LocalVibe — an LM Studio-style chat,
+//! database browser, model picker, and indexing dashboard.
+
 pub mod app;
 pub mod chat_view;
 pub mod context_panel;
