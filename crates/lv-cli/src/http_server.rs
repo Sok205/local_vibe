@@ -36,13 +36,7 @@ pub async fn serve_http(
         ctx.set_active_tier(tier).await.ok();
     }
 
-    let state = HttpState { ctx };
-    let app = Router::new()
-        .route("/health", get(health))
-        .route("/v1/models", get(list_models))
-        .route("/v1/chat/completions", post(chat_completions))
-        .layer(CorsLayer::permissive())
-        .with_state(state);
+    let app = build_router(HttpState { ctx });
 
     tracing::info!("HTTP server listening on http://{}", addr);
     eprintln!("lv http listening on http://{addr}");
@@ -53,6 +47,15 @@ pub async fn serve_http(
         .await
         .context("axum server crashed")?;
     Ok(())
+}
+
+fn build_router(state: HttpState) -> Router {
+    Router::new()
+        .route("/health", get(health))
+        .route("/v1/models", get(list_models))
+        .route("/v1/chat/completions", post(chat_completions))
+        .layer(CorsLayer::permissive())
+        .with_state(state)
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -501,5 +504,62 @@ mod tests {
         assert_eq!(resolve_tier("MEDIUM", &cfg), ModelTier::Medium);
         assert_eq!(resolve_tier("strong", &cfg), ModelTier::Strong);
         assert_eq!(resolve_tier("unknown-model", &cfg), ModelTier::Medium);
+    }
+
+    use axum::body::Body;
+    use axum::http::Request;
+    use http_body_util::BodyExt;
+    use lv_core::Config;
+    use tower::ServiceExt;
+
+    fn test_state() -> HttpState {
+        HttpState {
+            ctx: Arc::new(AppContext::new(Config::default())),
+        }
+    }
+
+    #[tokio::test]
+    async fn health_returns_ok() {
+        let app = build_router(test_state());
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn list_models_returns_three_tiers() {
+        let app = build_router(test_state());
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/models")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["object"], "list");
+        let ids: Vec<&str> = json["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["id"].as_str().unwrap())
+            .collect();
+        assert!(ids.contains(&"fast"));
+        assert!(ids.contains(&"medium"));
+        assert!(ids.contains(&"strong"));
     }
 }

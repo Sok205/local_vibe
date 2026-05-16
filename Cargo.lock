@@ -4507,6 +4507,7 @@ dependencies = [
  "clap",
  "dirs",
  "futures",
+ "http-body-util",
  "lv-core",
  "lv-inference",
  "lv-mcp",
@@ -4517,6 +4518,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",
@@ -4562,6 +4564,7 @@ dependencies = [
 name = "lv-mcp"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "lv-core",
  "lv-rag",
