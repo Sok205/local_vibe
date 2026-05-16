@@ -4545,6 +4545,7 @@ name = "lv-inference"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "dirs",
  "fastembed",
  "futures",
  "lv-core",
