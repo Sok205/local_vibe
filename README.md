@@ -11,8 +11,6 @@ Runs on Apple Silicon (M1–M4). Candle + Metal for inference,
 [fastembed-rs](https://crates.io/crates/fastembed) for embeddings,
 [LanceDB](https://lancedb.com) for vectors.
 
-> _A TUI screenshot will live here once one is captured — see `docs/screenshots/`._
-
 ---
 
 ## Quick start
@@ -438,8 +436,6 @@ Reinstall after changes:
 ```bash
 cargo install --path crates/lv-cli --force
 ```
-
-Design specs for recent work live in `docs/superpowers/specs/`.
 
 ## Contributing
 
