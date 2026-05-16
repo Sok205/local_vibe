@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use arrow_array::{
-    Array, ArrayRef, FixedSizeListArray, Float32Array, RecordBatch,
-    RecordBatchIterator, StringArray, UInt32Array,
+    Array, ArrayRef, FixedSizeListArray, Float32Array, RecordBatch, RecordBatchIterator,
+    StringArray, UInt32Array,
 };
 use arrow_schema::{DataType, Field, Schema};
 use async_trait::async_trait;
 use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
-use lancedb::{connect, Connection, Table as LanceTable};
+use lancedb::{Connection, Table as LanceTable, connect};
 use tokio::sync::RwLock;
 
 use lv_core::types::{Document, FileSummary, SearchFilter, SearchResult, StoreStats};

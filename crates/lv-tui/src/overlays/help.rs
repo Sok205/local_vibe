@@ -15,17 +15,41 @@ struct KeyEntry {
 }
 
 const GLOBAL_KEYS: &[KeyEntry] = &[
-    KeyEntry { key: "F1..F5",        description: "switch section (Chat / Models / Databases / Index / Settings)" },
-    KeyEntry { key: "Ctrl+1..5",     description: "same (fallback — many macOS terms eat Ctrl+1..3)" },
-    KeyEntry { key: "Ctrl+C, Ctrl+Q", description: "quit" },
-    KeyEntry { key: "Esc",           description: "back out of a focused sub-pane or overlay" },
-    KeyEntry { key: "?",             description: "toggle this help (when not typing in chat)" },
+    KeyEntry {
+        key: "F1..F5",
+        description: "switch section (Chat / Models / Databases / Index / Settings)",
+    },
+    KeyEntry {
+        key: "Ctrl+1..5",
+        description: "same (fallback — many macOS terms eat Ctrl+1..3)",
+    },
+    KeyEntry {
+        key: "Ctrl+C, Ctrl+Q",
+        description: "quit",
+    },
+    KeyEntry {
+        key: "Esc",
+        description: "back out of a focused sub-pane or overlay",
+    },
+    KeyEntry {
+        key: "?",
+        description: "toggle this help (when not typing in chat)",
+    },
 ];
 
 const CHAT_KEYS: &[KeyEntry] = &[
-    KeyEntry { key: "Enter",  description: "send the current message" },
-    KeyEntry { key: "Tab",    description: "toggle focus between chat input and context pane" },
-    KeyEntry { key: "↑ / ↓",  description: "scroll chat history (input focus) / move selection (context focus)" },
+    KeyEntry {
+        key: "Enter",
+        description: "send the current message",
+    },
+    KeyEntry {
+        key: "Tab",
+        description: "toggle focus between chat input and context pane",
+    },
+    KeyEntry {
+        key: "↑ / ↓",
+        description: "scroll chat history (input focus) / move selection (context focus)",
+    },
 ];
 
 pub struct HelpOverlay;

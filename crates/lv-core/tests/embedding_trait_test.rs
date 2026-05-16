@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use lv_core::traits::EmbeddingBackend;
 use lv_core::Result;
+use lv_core::traits::EmbeddingBackend;
 
 struct FixedEmbedder;
 
@@ -9,8 +9,12 @@ impl EmbeddingBackend for FixedEmbedder {
     async fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
         Ok(texts.iter().map(|_| vec![0.1, 0.2, 0.3]).collect())
     }
-    fn dim(&self) -> usize { 3 }
-    fn model_name(&self) -> &str { "fixed" }
+    fn dim(&self) -> usize {
+        3
+    }
+    fn model_name(&self) -> &str {
+        "fixed"
+    }
 }
 
 #[tokio::test]

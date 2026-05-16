@@ -1,10 +1,10 @@
 use lv_core::types::SearchResult;
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
-    Frame,
 };
 
 pub struct ContextPanel {
@@ -60,12 +60,16 @@ impl ContextPanel {
                         format!("{:.2} ", result.score),
                         Style::default().fg(Color::Green),
                     ),
-                    Span::styled(
-                        result.file_name.clone(),
-                        Style::default().fg(Color::Cyan),
-                    ),
+                    Span::styled(result.file_name.clone(), Style::default().fg(Color::Cyan)),
                 ]));
-                let preview: String = result.text.lines().next().unwrap_or("").chars().take(50).collect();
+                let preview: String = result
+                    .text
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .chars()
+                    .take(50)
+                    .collect();
                 lines.push(Line::from(Span::styled(
                     format!("  {preview}"),
                     Style::default().fg(Color::DarkGray),

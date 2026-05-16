@@ -1,5 +1,5 @@
-use crate::error::VibeError;
 use crate::Result;
+use crate::error::VibeError;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
@@ -81,26 +81,64 @@ pub struct TuiConfig {
 }
 
 fn default_fast_model() -> ModelConfig {
-    ModelConfig { name: "gemma-4-e2b-it".into(), backend: "mlx-lm".into(), quantization: "4bit".into(), model_path: None, tokenizer_path: None }
+    ModelConfig {
+        name: "gemma-4-e2b-it".into(),
+        backend: "mlx-lm".into(),
+        quantization: "4bit".into(),
+        model_path: None,
+        tokenizer_path: None,
+    }
 }
 fn default_medium_model() -> ModelConfig {
-    ModelConfig { name: "gemma-4-26b-a4b-it".into(), backend: "mlx-lm".into(), quantization: "4bit".into(), model_path: None, tokenizer_path: None }
+    ModelConfig {
+        name: "gemma-4-26b-a4b-it".into(),
+        backend: "mlx-lm".into(),
+        quantization: "4bit".into(),
+        model_path: None,
+        tokenizer_path: None,
+    }
 }
 fn default_strong_model() -> ModelConfig {
-    ModelConfig { name: "gemma-4-31b-it".into(), backend: "mlx-lm".into(), quantization: "4bit".into(), model_path: None, tokenizer_path: None }
+    ModelConfig {
+        name: "gemma-4-31b-it".into(),
+        backend: "mlx-lm".into(),
+        quantization: "4bit".into(),
+        model_path: None,
+        tokenizer_path: None,
+    }
 }
-fn default_backend() -> String { "fastembed".into() }
-fn default_quantization() -> String { "4bit".into() }
+fn default_backend() -> String {
+    "fastembed".into()
+}
+fn default_quantization() -> String {
+    "4bit".into()
+}
 fn default_db_dir() -> PathBuf {
-    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("local-vibe/db")
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("local-vibe/db")
 }
-fn default_chunk_size() -> usize { 1500 }
-fn default_code_chunk_strategy() -> String { "ast".into() }
-fn default_retrieval_limit() -> usize { 5 }
-fn default_retrieval_threshold() -> f32 { 0.5 }
-fn default_languages() -> Vec<String> { vec!["rust".into(), "typescript".into(), "python".into()] }
-fn default_true() -> bool { true }
-fn default_graph_store() -> String { "memory".into() }
+fn default_chunk_size() -> usize {
+    1500
+}
+fn default_code_chunk_strategy() -> String {
+    "ast".into()
+}
+fn default_retrieval_limit() -> usize {
+    5
+}
+fn default_retrieval_threshold() -> f32 {
+    0.5
+}
+fn default_languages() -> Vec<String> {
+    vec!["rust".into(), "typescript".into(), "python".into()]
+}
+fn default_true() -> bool {
+    true
+}
+fn default_graph_store() -> String {
+    "memory".into()
+}
 
 impl Default for ModelsConfig {
     fn default() -> Self {
@@ -129,13 +167,20 @@ impl Default for RagConfig {
 
 impl Default for CodeGraphConfig {
     fn default() -> Self {
-        Self { languages: default_languages(), auto_index: true, store: default_graph_store() }
+        Self {
+            languages: default_languages(),
+            auto_index: true,
+            store: default_graph_store(),
+        }
     }
 }
 
 impl Default for TuiConfig {
     fn default() -> Self {
-        Self { vim_keys: true, context_panel: true }
+        Self {
+            vim_keys: true,
+            context_panel: true,
+        }
     }
 }
 
@@ -149,7 +194,9 @@ impl Config {
 
     pub fn discover() -> Self {
         for path in Self::candidate_paths() {
-            if path.exists() && let Ok(config) = Self::load(&path) {
+            if path.exists()
+                && let Ok(config) = Self::load(&path)
+            {
                 return config;
             }
         }
@@ -167,7 +214,9 @@ impl Config {
     fn candidate_paths() -> Vec<PathBuf> {
         vec![
             PathBuf::from("local-vibe.toml"),
-            dirs::config_dir().map(|d| d.join("local-vibe/config.toml")).unwrap_or_default(),
+            dirs::config_dir()
+                .map(|d| d.join("local-vibe/config.toml"))
+                .unwrap_or_default(),
         ]
     }
 }

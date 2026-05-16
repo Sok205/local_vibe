@@ -52,7 +52,9 @@ pub fn draw_status_bar(frame: &mut Frame, area: Rect, view: StatusBarView) {
 
     spans.push(Span::styled(
         " ◆ local-vibe ",
-        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
     ));
     spans.push(sep());
     spans.push(Span::styled(

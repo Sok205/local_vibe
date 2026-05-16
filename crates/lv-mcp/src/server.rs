@@ -9,9 +9,10 @@ use lv_rag::indexer::IndexManager;
 use lv_rag::parsers::{epub::EpubParser, html::HtmlParser, pdf::PdfParser, text::TextParser};
 use lv_rag::query::QueryEngine;
 use rmcp::{
+    ErrorData as McpError, ServerHandler, ServiceExt,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
-    schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler, ServiceExt,
+    schemars, tool, tool_handler, tool_router,
 };
 
 pub async fn run_stdio(
@@ -116,15 +117,16 @@ impl VibeMcpServer {
         } else {
             self.host.store_named(&name).await
         };
-        result.map_err(|e| {
-            McpError::internal_error(format!("failed to open DB '{name}': {e}"), None)
-        })
+        result
+            .map_err(|e| McpError::internal_error(format!("failed to open DB '{name}': {e}"), None))
     }
 }
 
 #[tool_router]
 impl VibeMcpServer {
-    #[tool(description = "Search indexed code and documents using semantic similarity. Returns relevant chunks with file citations and similarity scores. Pass `db` to search a specific indexed DB; omit to use the server's current DB.")]
+    #[tool(
+        description = "Search indexed code and documents using semantic similarity. Returns relevant chunks with file citations and similarity scores. Pass `db` to search a specific indexed DB; omit to use the server's current DB."
+    )]
     async fn search_code(
         &self,
         Parameters(params): Parameters<SearchCodeParams>,
@@ -177,7 +179,9 @@ impl VibeMcpServer {
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 
-    #[tool(description = "Index a local directory into the vector store. Parses code and documents (Rust, TypeScript, Python, Markdown, PDF, HTML, EPUB) into chunks, embeds them, and stores for semantic search. Pass `db` to target a specific DB; omit to use the server's current DB.")]
+    #[tool(
+        description = "Index a local directory into the vector store. Parses code and documents (Rust, TypeScript, Python, Markdown, PDF, HTML, EPUB) into chunks, embeds them, and stores for semantic search. Pass `db` to target a specific DB; omit to use the server's current DB."
+    )]
     async fn index_directory(
         &self,
         Parameters(params): Parameters<IndexDirectoryParams>,
@@ -243,11 +247,10 @@ impl VibeMcpServer {
             }
         }
 
-        handle.await.map_err(|e| {
-            McpError::internal_error(format!("Indexing task panicked: {e}"), None)
-        })?.map_err(|e| {
-            McpError::internal_error(format!("Indexing failed: {e}"), None)
-        })?;
+        handle
+            .await
+            .map_err(|e| McpError::internal_error(format!("Indexing task panicked: {e}"), None))?
+            .map_err(|e| McpError::internal_error(format!("Indexing failed: {e}"), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Indexing complete: {} indexed, {} skipped, {} failed",
@@ -255,7 +258,9 @@ impl VibeMcpServer {
         ))]))
     }
 
-    #[tool(description = "Get statistics about an indexed DB: total chunks and unique files. Pass `db` to inspect a specific DB; omit to use the server's current DB.")]
+    #[tool(
+        description = "Get statistics about an indexed DB: total chunks and unique files. Pass `db` to inspect a specific DB; omit to use the server's current DB."
+    )]
     async fn get_stats(
         &self,
         Parameters(params): Parameters<StatsParams>,
@@ -272,7 +277,9 @@ impl VibeMcpServer {
         ))]))
     }
 
-    #[tool(description = "List indexed files with their language and chunk count. Returns up to `limit` files (default 200), sorted by path. Pass `db` to inspect a specific DB; omit to use the server's current DB.")]
+    #[tool(
+        description = "List indexed files with their language and chunk count. Returns up to `limit` files (default 200), sorted by path. Pass `db` to inspect a specific DB; omit to use the server's current DB."
+    )]
     async fn list_sources(
         &self,
         Parameters(params): Parameters<ListSourcesParams>,
@@ -291,7 +298,11 @@ impl VibeMcpServer {
         }
 
         let mut out = String::new();
-        out.push_str(&format!("{} files (showing up to {}):\n\n", files.len(), limit));
+        out.push_str(&format!(
+            "{} files (showing up to {}):\n\n",
+            files.len(),
+            limit
+        ));
         for f in &files {
             let lang = f.language.as_deref().unwrap_or("?");
             out.push_str(&format!(
@@ -304,7 +315,9 @@ impl VibeMcpServer {
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
-    #[tool(description = "Get a status snapshot of the local-vibe server: configured models with warm/cold state, active tier, indexed DBs with chunk/file counts, and runtime info (PID, session). Returns human-readable text by default; pass json=true for machine-readable JSON.")]
+    #[tool(
+        description = "Get a status snapshot of the local-vibe server: configured models with warm/cold state, active tier, indexed DBs with chunk/file counts, and runtime info (PID, session). Returns human-readable text by default; pass json=true for machine-readable JSON."
+    )]
     async fn get_status(
         &self,
         Parameters(params): Parameters<GetStatusParams>,
@@ -334,13 +347,31 @@ impl VibeMcpServer {
             ("medium", &snapshot.models.medium),
             ("strong", &snapshot.models.strong),
         ] {
-            let state = if warm.contains(label.trim()) { "warm" } else { "cold" };
-            let active_mark = if label.trim().parse::<ModelTier>() == Ok(active_tier) { " ← active" } else { "" };
-            out.push_str(&format!("  {label}  {:22}  {:8}  {state}{active_mark}\n", slot.name, slot.backend));
+            let state = if warm.contains(label.trim()) {
+                "warm"
+            } else {
+                "cold"
+            };
+            let active_mark = if label.trim().parse::<ModelTier>() == Ok(active_tier) {
+                " ← active"
+            } else {
+                ""
+            };
+            out.push_str(&format!(
+                "  {label}  {:22}  {:8}  {state}{active_mark}\n",
+                slot.name, slot.backend
+            ));
         }
         if let Some(emb) = &snapshot.models.embedding {
-            let state = if warm.contains("embedding") { "warm" } else { "cold" };
-            out.push_str(&format!("  embed   {:22}  {:8}  {state}\n", emb.name, emb.backend));
+            let state = if warm.contains("embedding") {
+                "warm"
+            } else {
+                "cold"
+            };
+            out.push_str(&format!(
+                "  embed   {:22}  {:8}  {state}\n",
+                emb.name, emb.backend
+            ));
         } else {
             out.push_str("  embed   (not configured — RAG disabled)\n");
         }
@@ -350,13 +381,20 @@ impl VibeMcpServer {
             out.push_str("\n=== Indexed DBs ===\n");
             for db in &snapshot.databases {
                 let current_mark = if db.is_current { " ← current" } else { "" };
-                out.push_str(&format!("  {:16}  {} chunks, {} files{}\n",
-                    db.name, db.total_chunks, db.unique_files, current_mark));
+                out.push_str(&format!(
+                    "  {:16}  {} chunks, {} files{}\n",
+                    db.name, db.total_chunks, db.unique_files, current_mark
+                ));
                 if !db.languages.is_empty() {
-                    let langs: Vec<String> = db.languages.iter()
+                    let langs: Vec<String> = db
+                        .languages
+                        .iter()
                         .map(|(l, n)| format!("{l}({n})"))
                         .collect();
-                    out.push_str(&format!("                    languages: {}\n", langs.join(", ")));
+                    out.push_str(&format!(
+                        "                    languages: {}\n",
+                        langs.join(", ")
+                    ));
                 }
             }
         } else {
@@ -379,14 +417,19 @@ impl VibeMcpServer {
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
-    #[tool(description = "Load and activate a chat model tier for this MCP session. Use this to switch which model responds to chat queries. Tier values: 'fast' (small/quick), 'medium' (balanced), 'strong' (best quality). Loading takes a few seconds on first call.")]
+    #[tool(
+        description = "Load and activate a chat model tier for this MCP session. Use this to switch which model responds to chat queries. Tier values: 'fast' (small/quick), 'medium' (balanced), 'strong' (best quality). Loading takes a few seconds on first call."
+    )]
     async fn switch_model(
         &self,
         Parameters(params): Parameters<SwitchModelParams>,
     ) -> Result<CallToolResult, McpError> {
         let tier = params.tier.parse::<ModelTier>().map_err(|_| {
             McpError::invalid_params(
-                format!("unknown tier '{}'; use fast, medium, or strong", params.tier),
+                format!(
+                    "unknown tier '{}'; use fast, medium, or strong",
+                    params.tier
+                ),
                 None,
             )
         })?;
@@ -408,9 +451,7 @@ impl VibeMcpServer {
 #[tool_handler]
 impl ServerHandler for VibeMcpServer {
     fn get_info(&self) -> ServerInfo {
-        let mut info = ServerInfo::new(
-            ServerCapabilities::builder().enable_tools().build(),
-        );
+        let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
         info.instructions = Some(
             "LocalVibe MCP: semantic search over locally indexed code and documents. \
             Index directories of Rust, TypeScript, Python, Markdown, PDF, HTML, or EPUB files, \

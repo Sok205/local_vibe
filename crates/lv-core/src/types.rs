@@ -1,7 +1,7 @@
+use futures::Stream;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::pin::Pin;
-use futures::Stream;
 use uuid::Uuid;
 
 // --- Inference types ---
@@ -57,7 +57,9 @@ pub struct ModelInfo {
     pub tier: ModelTier,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum ModelTier {
     Fast,
     Medium,
@@ -74,7 +76,6 @@ impl ModelTier {
             ModelTier::Cloud => "cloud",
         }
     }
-
 }
 
 impl std::str::FromStr for ModelTier {
@@ -186,8 +187,16 @@ pub struct Location {
 #[derive(Debug, Clone)]
 pub enum IndexProgress {
     Scanning,
-    Indexing { done: usize, total: usize, current: String },
-    Complete { indexed: usize, skipped: usize, failed: usize },
+    Indexing {
+        done: usize,
+        total: usize,
+        current: String,
+    },
+    Complete {
+        indexed: usize,
+        skipped: usize,
+        failed: usize,
+    },
     Error(String),
 }
 

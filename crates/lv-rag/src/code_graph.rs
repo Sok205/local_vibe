@@ -1,6 +1,6 @@
+use lv_core::Result;
 use lv_core::traits::CodeGraph;
 use lv_core::types::{Location, Span, Symbol, SymbolId, SymbolKind};
-use lv_core::Result;
 use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 use tree_sitter::Language;
@@ -159,10 +159,7 @@ impl CodeGraph for TreeSitterGraph {
     }
 
     fn symbols(&self, path: &Path) -> Vec<Symbol> {
-        self.symbols
-            .get(path)
-            .cloned()
-            .unwrap_or_default()
+        self.symbols.get(path).cloned().unwrap_or_default()
     }
 
     fn references(&self, symbol: &SymbolId) -> Vec<Location> {
@@ -198,8 +195,7 @@ impl CodeGraph for TreeSitterGraph {
                 continue;
             }
             let is_dep = syms.iter().any(|sym| {
-                matches!(sym.id.kind, SymbolKind::Import)
-                    && sym.signature.contains(stem)
+                matches!(sym.id.kind, SymbolKind::Import) && sym.signature.contains(stem)
             });
             if is_dep {
                 deps.push(file_path.clone());

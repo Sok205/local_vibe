@@ -1,7 +1,7 @@
 use candle_core::Tensor;
 use candle_transformers::generation::LogitsProcessor;
-use lv_core::error::VibeError;
 use lv_core::Result;
+use lv_core::error::VibeError;
 
 pub struct Sampler {
     processor: LogitsProcessor,
@@ -13,7 +13,11 @@ impl Sampler {
 
         let sampling = match (temperature, top_p, top_k) {
             (t, _, _) if t <= 0.0 => Sampling::ArgMax,
-            (t, Some(p), Some(k)) => Sampling::TopKThenTopP { k, p, temperature: t },
+            (t, Some(p), Some(k)) => Sampling::TopKThenTopP {
+                k,
+                p,
+                temperature: t,
+            },
             (t, Some(p), None) => Sampling::TopP { p, temperature: t },
             (t, None, Some(k)) => Sampling::TopK { k, temperature: t },
             (t, None, None) => Sampling::All { temperature: t },

@@ -22,7 +22,10 @@ impl Default for InputBuffer {
 
 impl InputBuffer {
     pub fn new() -> Self {
-        Self { buf: Vec::new(), cursor: 0 }
+        Self {
+            buf: Vec::new(),
+            cursor: 0,
+        }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> InputAction {

@@ -40,8 +40,16 @@ pub enum AppEvent {
     ModelChanged(ModelTier, String),
     StoreStats(StoreStats),
     Error(String),
-    IndexProgress { done: usize, total: usize, current: String },
-    IndexDone { indexed: usize, skipped: usize, failed: usize },
+    IndexProgress {
+        done: usize,
+        total: usize,
+        current: String,
+    },
+    IndexDone {
+        indexed: usize,
+        skipped: usize,
+        failed: usize,
+    },
     DbListing(Vec<String>),
     DbSwitched(String),
     Status(Box<StatusSnapshot>),
@@ -52,7 +60,11 @@ pub enum AppEvent {
     ModelUnloaded(ModelTier),
     ActiveTierChanged(ModelTier, String),
     WarmCountChanged(usize, bool),
-    BrowseData { db: String, files: Vec<FileSummary>, total_chunks: usize },
+    BrowseData {
+        db: String,
+        files: Vec<FileSummary>,
+        total_chunks: usize,
+    },
 }
 
 pub enum AppCommand {
@@ -229,7 +241,9 @@ pub async fn run_tui(
             }
         })?;
 
-        if event::poll(poll_interval)? && let Event::Key(key) = event::read()? {
+        if event::poll(poll_interval)?
+            && let Event::Key(key) = event::read()?
+        {
             // Startup chooser takes priority over everything.
             if let Some(startup) = state.startup.as_mut() {
                 if startup.handle_key(key) {
@@ -331,15 +345,18 @@ pub async fn run_tui(
                     // Block load commands for session-disabled tiers.
                     let blocked_tier = match &cmd {
                         AppCommand::LoadModel(t) | AppCommand::LoadAndActivate(t) => {
-                            if state.session_disabled.contains(t) { Some(*t) } else { None }
+                            if state.session_disabled.contains(t) {
+                                Some(*t)
+                            } else {
+                                None
+                            }
                         }
                         _ => None,
                     };
                     if let Some(t) = blocked_tier {
-                        state.models_section.set_footer(format!(
-                            "{} is disabled for this session",
-                            tier_label(t)
-                        ));
+                        state
+                            .models_section
+                            .set_footer(format!("{} is disabled for this session", tier_label(t)));
                         continue;
                     }
                     let _ = command_tx.send(cmd).await;
@@ -400,10 +417,22 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
                 content: format!("Error: {msg}"),
             });
         }
-        AppEvent::IndexProgress { done, total, current } => {
-            state.indexing = Some(IndexingProgress { done, total, current });
+        AppEvent::IndexProgress {
+            done,
+            total,
+            current,
+        } => {
+            state.indexing = Some(IndexingProgress {
+                done,
+                total,
+                current,
+            });
         }
-        AppEvent::IndexDone { indexed, skipped, failed } => {
+        AppEvent::IndexDone {
+            indexed,
+            skipped,
+            failed,
+        } => {
             state.indexing = None;
             state.index_section.on_index_done(indexed, skipped, failed);
             state.chat_section.chat.push_message(Message {
@@ -451,7 +480,11 @@ fn handle_app_event(event: AppEvent, state: &mut AppState) {
             state.warm_count = n;
             state.active_loading = active_loading;
         }
-        AppEvent::BrowseData { db, files, total_chunks } => {
+        AppEvent::BrowseData {
+            db,
+            files,
+            total_chunks,
+        } => {
             use crate::overlays::BrowseOverlay;
             state.overlay = Some(Box::new(BrowseOverlay::new(db, files, total_chunks)));
         }

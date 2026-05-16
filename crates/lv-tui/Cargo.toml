@@ -1,8 +1,15 @@
 [package]
 name = "lv-tui"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 license.workspace = true
+description = "Ratatui-based terminal UI for LocalVibe"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 lv-core = { path = "../lv-core" }

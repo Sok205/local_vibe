@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+use lv_core::Result;
 use lv_core::error::VibeError;
 use lv_core::traits::EmbeddingBackend;
-use lv_core::Result;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 

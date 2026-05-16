@@ -254,11 +254,31 @@ mod tests {
     #[test]
     fn language_histogram_sorts_desc_by_count_then_name() {
         let files = vec![
-            FileSummary { file_path: "a.rs".into(), language: Some("rust".into()), chunk_count: 1 },
-            FileSummary { file_path: "b.rs".into(), language: Some("rust".into()), chunk_count: 2 },
-            FileSummary { file_path: "c.md".into(), language: Some("markdown".into()), chunk_count: 5 },
-            FileSummary { file_path: "d.ts".into(), language: Some("typescript".into()), chunk_count: 1 },
-            FileSummary { file_path: "e.py".into(), language: Some("python".into()), chunk_count: 1 },
+            FileSummary {
+                file_path: "a.rs".into(),
+                language: Some("rust".into()),
+                chunk_count: 1,
+            },
+            FileSummary {
+                file_path: "b.rs".into(),
+                language: Some("rust".into()),
+                chunk_count: 2,
+            },
+            FileSummary {
+                file_path: "c.md".into(),
+                language: Some("markdown".into()),
+                chunk_count: 5,
+            },
+            FileSummary {
+                file_path: "d.ts".into(),
+                language: Some("typescript".into()),
+                chunk_count: 1,
+            },
+            FileSummary {
+                file_path: "e.py".into(),
+                language: Some("python".into()),
+                chunk_count: 1,
+            },
         ];
         let hist = language_histogram_by_files(&files);
         assert_eq!(hist[0], ("rust".into(), 2));

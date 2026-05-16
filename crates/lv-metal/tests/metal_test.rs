@@ -2,9 +2,10 @@ use lv_core::types::{Message, Role};
 
 #[test]
 fn test_chat_template_format() {
-    let messages = vec![
-        Message { role: Role::User, content: "Hello".to_string() },
-    ];
+    let messages = vec![Message {
+        role: Role::User,
+        content: "Hello".to_string(),
+    }];
 
     // Manually verify the template format
     let mut prompt = String::new();
@@ -22,15 +23,27 @@ fn test_chat_template_format() {
     }
     prompt.push_str("<start_of_turn>model\n");
 
-    assert_eq!(prompt, "<start_of_turn>user\nHello<end_of_turn>\n<start_of_turn>model\n");
+    assert_eq!(
+        prompt,
+        "<start_of_turn>user\nHello<end_of_turn>\n<start_of_turn>model\n"
+    );
 }
 
 #[test]
 fn test_chat_template_multi_turn() {
     let messages = vec![
-        Message { role: Role::User, content: "Hi".to_string() },
-        Message { role: Role::Assistant, content: "Hello!".to_string() },
-        Message { role: Role::User, content: "How are you?".to_string() },
+        Message {
+            role: Role::User,
+            content: "Hi".to_string(),
+        },
+        Message {
+            role: Role::Assistant,
+            content: "Hello!".to_string(),
+        },
+        Message {
+            role: Role::User,
+            content: "How are you?".to_string(),
+        },
     ];
 
     let mut prompt = String::new();
@@ -71,19 +84,18 @@ fn test_metal_device_available() {
 #[tokio::test]
 #[ignore]
 async fn test_metal_backend_inference() {
+    use futures::StreamExt;
     use lv_core::traits::InferenceBackend;
     use lv_core::types::*;
     use lv_metal::MetalBackend;
-    use futures::StreamExt;
     use std::path::PathBuf;
 
     let model_path = PathBuf::from(
-        std::env::var("LV_TEST_MODEL_PATH")
-            .expect("set LV_TEST_MODEL_PATH to a GGUF file")
+        std::env::var("LV_TEST_MODEL_PATH").expect("set LV_TEST_MODEL_PATH to a GGUF file"),
     );
     let tokenizer_path = PathBuf::from(
         std::env::var("LV_TEST_TOKENIZER_PATH")
-            .expect("set LV_TEST_TOKENIZER_PATH to tokenizer.json")
+            .expect("set LV_TEST_TOKENIZER_PATH to tokenizer.json"),
     );
 
     let backend = MetalBackend::load(&model_path, &tokenizer_path, ModelTier::Medium)
@@ -93,9 +105,10 @@ async fn test_metal_backend_inference() {
     assert!(health.available);
 
     let req = CompletionRequest {
-        messages: vec![
-            Message { role: Role::User, content: "Say hello in one word.".to_string() },
-        ],
+        messages: vec![Message {
+            role: Role::User,
+            content: "Say hello in one word.".to_string(),
+        }],
         temperature: 0.1,
         max_tokens: 10,
         stream: true,
@@ -120,20 +133,19 @@ async fn test_metal_backend_inference() {
 #[tokio::test]
 #[ignore]
 async fn bench_metal_throughput() {
+    use futures::StreamExt;
     use lv_core::traits::InferenceBackend;
     use lv_core::types::*;
     use lv_metal::MetalBackend;
-    use futures::StreamExt;
     use std::path::PathBuf;
     use std::time::Instant;
 
     let model_path = PathBuf::from(
-        std::env::var("LV_TEST_MODEL_PATH")
-            .expect("set LV_TEST_MODEL_PATH to a GGUF file")
+        std::env::var("LV_TEST_MODEL_PATH").expect("set LV_TEST_MODEL_PATH to a GGUF file"),
     );
     let tokenizer_path = PathBuf::from(
         std::env::var("LV_TEST_TOKENIZER_PATH")
-            .expect("set LV_TEST_TOKENIZER_PATH to tokenizer.json")
+            .expect("set LV_TEST_TOKENIZER_PATH to tokenizer.json"),
     );
 
     let load_start = Instant::now();
@@ -145,20 +157,31 @@ async fn bench_metal_throughput() {
 
     // Warmup
     let warmup_req = CompletionRequest {
-        messages: vec![Message { role: Role::User, content: "Hi".to_string() }],
-        temperature: 0.7, max_tokens: 5, stream: true, session_id: None,
+        messages: vec![Message {
+            role: Role::User,
+            content: "Hi".to_string(),
+        }],
+        temperature: 0.7,
+        max_tokens: 5,
+        stream: true,
+        session_id: None,
     };
     let mut stream = backend.complete(warmup_req).await.unwrap();
     while let Some(chunk) = stream.next().await {
-        if let Ok(c) = chunk { if c.finished { break; } }
+        if let Ok(c) = chunk
+            && c.finished
+        {
+            break;
+        }
     }
     println!("Warmup complete");
 
     // Actual benchmark
     let req = CompletionRequest {
-        messages: vec![
-            Message { role: Role::User, content: "Write a short paragraph about the Rust programming language.".to_string() },
-        ],
+        messages: vec![Message {
+            role: Role::User,
+            content: "Write a short paragraph about the Rust programming language.".to_string(),
+        }],
         temperature: 0.7,
         max_tokens: 100,
         stream: true,
@@ -198,7 +221,10 @@ async fn bench_metal_throughput() {
     println!("Total time: {:.2}s", total.as_secs_f64());
     println!("Time to first token: {:.2}s", ttft.as_secs_f64());
     println!("Tokens generated: {}", token_count);
-    println!("Generation time (excl. TTFT): {:.2}s", gen_time.as_secs_f64());
+    println!(
+        "Generation time (excl. TTFT): {:.2}s",
+        gen_time.as_secs_f64()
+    );
     println!("Throughput: {:.1} tok/s", tok_per_sec);
     println!("\nResponse: {response}");
 }

@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{Semaphore, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use lv_core::traits::{Chunker, EmbeddingBackend, Parser, VectorStore};
@@ -9,7 +9,7 @@ use lv_core::types::{Document, IndexProgress};
 use lv_core::{Result, VibeError};
 
 use crate::hasher;
-use crate::scanner::{scan_directory, ScannedFile};
+use crate::scanner::{ScannedFile, scan_directory};
 
 pub struct IndexManager {
     parsers: Vec<Box<dyn Parser>>,
@@ -194,7 +194,7 @@ async fn index_single_file(
     let language = language_from_path(&file.path);
     let documents: Vec<Document> = chunks
         .iter()
-        .zip(vectors.into_iter())
+        .zip(vectors)
         .enumerate()
         .map(|(i, (chunk, embedding))| Document {
             text: chunk.text.clone(),
@@ -252,10 +252,22 @@ mod language_tests {
 
     #[test]
     fn maps_common_code_extensions() {
-        assert_eq!(language_from_path(Path::new("a.rs")).as_deref(), Some("rust"));
-        assert_eq!(language_from_path(Path::new("a.tsx")).as_deref(), Some("typescript"));
-        assert_eq!(language_from_path(Path::new("a.PY")).as_deref(), Some("python"));
-        assert_eq!(language_from_path(Path::new("a.md")).as_deref(), Some("markdown"));
+        assert_eq!(
+            language_from_path(Path::new("a.rs")).as_deref(),
+            Some("rust")
+        );
+        assert_eq!(
+            language_from_path(Path::new("a.tsx")).as_deref(),
+            Some("typescript")
+        );
+        assert_eq!(
+            language_from_path(Path::new("a.PY")).as_deref(),
+            Some("python")
+        );
+        assert_eq!(
+            language_from_path(Path::new("a.md")).as_deref(),
+            Some("markdown")
+        );
     }
 
     #[test]

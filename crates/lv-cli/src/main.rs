@@ -5,14 +5,12 @@ use clap::{Parser, Subcommand};
 use futures::StreamExt;
 use tokio::sync::mpsc;
 
-use lv_core::status::{collect_declared_status, Readiness, StatusSnapshot};
-use lv_core::traits::{AppHost, CodeGraph};
-use lv_core::types::{
-    CompletionRequest, Message, ModelTier, Role, SearchFilter, SearchResult,
-};
 use lv_core::Config;
+use lv_core::status::{Readiness, StatusSnapshot, collect_declared_status};
+use lv_core::traits::{AppHost, CodeGraph};
+use lv_core::types::{CompletionRequest, Message, ModelTier, Role, SearchFilter, SearchResult};
 use lv_rag::query::QueryEngine;
-use lv_tui::{run_tui, AppCommand, AppEvent};
+use lv_tui::{AppCommand, AppEvent, run_tui};
 
 mod app_context;
 mod http_server;
@@ -144,9 +142,18 @@ async fn main() -> anyhow::Result<()> {
 
 fn run_models(config: &Config) -> anyhow::Result<()> {
     println!("Configured models:");
-    println!("  fast:      {} ({})", config.models.fast.name, config.models.fast.backend);
-    println!("  medium:    {} ({})", config.models.medium.name, config.models.medium.backend);
-    println!("  strong:    {} ({})", config.models.strong.name, config.models.strong.backend);
+    println!(
+        "  fast:      {} ({})",
+        config.models.fast.name, config.models.fast.backend
+    );
+    println!(
+        "  medium:    {} ({})",
+        config.models.medium.name, config.models.medium.backend
+    );
+    println!(
+        "  strong:    {} ({})",
+        config.models.strong.name, config.models.strong.backend
+    );
     match &config.models.embedding {
         Some(m) => println!("  embedding: {} ({})", m.name, m.backend),
         None => println!("  embedding: (not configured — RAG disabled)"),
@@ -182,16 +189,14 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
                     let names = handler_ctx.list_dbs().await.unwrap_or_default();
                     let _ = handler_event_tx.send(AppEvent::DbListing(names)).await;
                 }
-                AppCommand::SwitchDb(name) => {
-                    match handler_ctx.set_current_db(&name).await {
-                        Ok(()) => {
-                            let _ = handler_event_tx.send(AppEvent::DbSwitched(name)).await;
-                        }
-                        Err(e) => {
-                            let _ = handler_event_tx.send(AppEvent::Error(e.to_string())).await;
-                        }
+                AppCommand::SwitchDb(name) => match handler_ctx.set_current_db(&name).await {
+                    Ok(()) => {
+                        let _ = handler_event_tx.send(AppEvent::DbSwitched(name)).await;
                     }
-                }
+                    Err(e) => {
+                        let _ = handler_event_tx.send(AppEvent::Error(e.to_string())).await;
+                    }
+                },
                 AppCommand::Status => {
                     let current = handler_ctx.current_db().await;
                     match collect_declared_status(&*handler_ctx, Some(&current)).await {
@@ -226,11 +231,7 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
                     match handler_ctx.open_store_readonly(&db).await {
                         Ok(store) => {
                             let files = store.list_files(usize::MAX).await.unwrap_or_default();
-                            let chunks = store
-                                .stats()
-                                .await
-                                .map(|s| s.total_chunks)
-                                .unwrap_or(0);
+                            let chunks = store.stats().await.map(|s| s.total_chunks).unwrap_or(0);
                             let _ = handler_event_tx
                                 .send(AppEvent::BrowseData {
                                     db,
@@ -253,9 +254,7 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
                         Ok(()) => {
                             let _ = handler_event_tx.send(AppEvent::ModelLoaded(tier)).await;
                             if let Err(e) = handler_ctx.set_active_tier(tier).await {
-                                let _ = handler_event_tx
-                                    .send(AppEvent::Error(e.to_string()))
-                                    .await;
+                                let _ = handler_event_tx.send(AppEvent::Error(e.to_string())).await;
                             } else {
                                 let name = active_tier_display(&handler_ctx, tier);
                                 let _ = handler_event_tx
@@ -296,9 +295,7 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
                             let _ = handler_event_tx.send(AppEvent::ModelUnloaded(tier)).await;
                         }
                         Err(e) => {
-                            let _ = handler_event_tx
-                                .send(AppEvent::Error(e.to_string()))
-                                .await;
+                            let _ = handler_event_tx.send(AppEvent::Error(e.to_string())).await;
                         }
                     }
                     emit_models_snapshot(&handler_ctx, &handler_event_tx).await;
@@ -313,9 +310,7 @@ async fn run_interactive(config: Config) -> anyhow::Result<()> {
                                 .await;
                         }
                         Err(e) => {
-                            let _ = handler_event_tx
-                                .send(AppEvent::Error(e.to_string()))
-                                .await;
+                            let _ = handler_event_tx.send(AppEvent::Error(e.to_string())).await;
                         }
                     }
                     emit_models_snapshot(&handler_ctx, &handler_event_tx).await;
@@ -379,8 +374,14 @@ async fn run_ask(config: Config, question: &str) -> anyhow::Result<()> {
 
     let req = CompletionRequest {
         messages: vec![
-            Message { role: Role::System, content: system_msg },
-            Message { role: Role::User, content: question.to_string() },
+            Message {
+                role: Role::System,
+                content: system_msg,
+            },
+            Message {
+                role: Role::User,
+                content: question.to_string(),
+            },
         ],
         session_id: Some(uuid::Uuid::new_v4()),
         ..Default::default()
@@ -438,7 +439,9 @@ async fn handle_ask(
                 (r, map)
             }
             Err(e) => {
-                let _ = event_tx.send(AppEvent::Error(format!("store error: {e}"))).await;
+                let _ = event_tx
+                    .send(AppEvent::Error(format!("store error: {e}")))
+                    .await;
                 (Vec::new(), String::new())
             }
         },
@@ -451,7 +454,9 @@ async fn handle_ask(
         }
     };
 
-    let _ = event_tx.send(AppEvent::SearchResults(results.clone())).await;
+    let _ = event_tx
+        .send(AppEvent::SearchResults(results.clone()))
+        .await;
     let _ = event_tx.send(AppEvent::RepoMap(repo_map.clone())).await;
 
     let mut context = String::new();
@@ -479,8 +484,14 @@ async fn handle_ask(
 
     let req = CompletionRequest {
         messages: vec![
-            Message { role: Role::System, content: system_msg },
-            Message { role: Role::User, content: query.to_string() },
+            Message {
+                role: Role::System,
+                content: system_msg,
+            },
+            Message {
+                role: Role::User,
+                content: query.to_string(),
+            },
         ],
         session_id: Some(session_id),
         ..Default::default()
@@ -583,22 +594,39 @@ async fn index_with_progress(
     };
     while let Some(progress) = rx.recv().await {
         match progress {
-            lv_core::types::IndexProgress::Indexing { done, total, current } => {
+            lv_core::types::IndexProgress::Indexing {
+                done,
+                total,
+                current,
+            } => {
                 let _ = event_tx
-                    .send(AppEvent::IndexProgress { done, total, current })
+                    .send(AppEvent::IndexProgress {
+                        done,
+                        total,
+                        current,
+                    })
                     .await;
             }
-            lv_core::types::IndexProgress::Complete { indexed, skipped, failed } => {
+            lv_core::types::IndexProgress::Complete {
+                indexed,
+                skipped,
+                failed,
+            } => {
                 let resolved_db = db_name.clone().unwrap_or_else(|| "default".to_string());
                 if let Ok(db_path) = ctx.db_path_for(&resolved_db)
                     && let Err(e) = lv_core::sidecar::write_indexed_now(
                         std::path::Path::new(&db_path),
                         env!("CARGO_PKG_VERSION"),
-                    ) {
+                    )
+                {
                     tracing::warn!("failed to write sidecar for '{resolved_db}': {e}");
                 }
                 let _ = event_tx
-                    .send(AppEvent::IndexDone { indexed, skipped, failed })
+                    .send(AppEvent::IndexDone {
+                        indexed,
+                        skipped,
+                        failed,
+                    })
                     .await;
             }
             lv_core::types::IndexProgress::Error(e) => {
@@ -646,10 +674,18 @@ async fn run_index(config: Config, path: &str, db: Option<&str>) -> anyhow::Resu
     let (mut rx, handle, _cancel) = manager.index(dir).await?;
     while let Some(progress) = rx.recv().await {
         match progress {
-            lv_core::types::IndexProgress::Indexing { done, total, current } => {
+            lv_core::types::IndexProgress::Indexing {
+                done,
+                total,
+                current,
+            } => {
                 eprintln!("[{done}/{total}] {current}");
             }
-            lv_core::types::IndexProgress::Complete { indexed, skipped, failed } => {
+            lv_core::types::IndexProgress::Complete {
+                indexed,
+                skipped,
+                failed,
+            } => {
                 eprintln!("Indexed: {indexed}, skipped: {skipped}, failed: {failed}");
             }
             _ => {}
@@ -688,9 +724,11 @@ async fn run_serve(config: Config, tier: Option<String>) -> anyhow::Result<()> {
     if let Some(ref t) = tier {
         let model_tier = parse_tier(t)?;
         tracing::info!("pre-loading tier '{t}' before MCP server start");
-        ctx.load_model(model_tier).await
+        ctx.load_model(model_tier)
+            .await
             .with_context(|| format!("failed to pre-load tier '{t}'"))?;
-        ctx.set_active_tier(model_tier).await
+        ctx.set_active_tier(model_tier)
+            .await
             .with_context(|| format!("failed to set active tier '{t}'"))?;
         tracing::info!("tier '{t}' warm and active");
     }
@@ -746,7 +784,10 @@ async fn run_dbs(config: Config, json: bool) -> anyhow::Result<()> {
         Vec::new()
     };
     if json {
-        println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "dbs": names }))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({ "dbs": names }))?
+        );
     } else if names.is_empty() {
         println!("(no DBs — index something with `lv index` or `/index <path> <name>` in the TUI)");
     } else {
@@ -760,10 +801,7 @@ async fn run_dbs(config: Config, json: bool) -> anyhow::Result<()> {
 async fn run_ls(config: Config, db: &str, limit: usize, json: bool) -> anyhow::Result<()> {
     let ctx = AppContext::new(config);
     let store = ctx.open_store_readonly(db).await?;
-    let files = store
-        .list_files(limit)
-        .await
-        .context("list_files failed")?;
+    let files = store.list_files(limit).await.context("list_files failed")?;
     if json {
         println!("{}", serde_json::to_string_pretty(&files)?);
     } else if files.is_empty() {
@@ -791,11 +829,31 @@ fn print_status_human(s: &StatusSnapshot) {
 
     println!("── Models ─────────────────────────────────────");
     let m = &s.models;
-    println!("  fast      {} ({}) — {}", m.fast.name, m.fast.backend, ready_glyph(&m.fast.ready));
-    println!("  medium    {} ({}) — {}", m.medium.name, m.medium.backend, ready_glyph(&m.medium.ready));
-    println!("  strong    {} ({}) — {}", m.strong.name, m.strong.backend, ready_glyph(&m.strong.ready));
+    println!(
+        "  fast      {} ({}) — {}",
+        m.fast.name,
+        m.fast.backend,
+        ready_glyph(&m.fast.ready)
+    );
+    println!(
+        "  medium    {} ({}) — {}",
+        m.medium.name,
+        m.medium.backend,
+        ready_glyph(&m.medium.ready)
+    );
+    println!(
+        "  strong    {} ({}) — {}",
+        m.strong.name,
+        m.strong.backend,
+        ready_glyph(&m.strong.ready)
+    );
     match &m.embedding {
-        Some(e) => println!("  embedding {} ({}) — {}", e.name, e.backend, ready_glyph(&e.ready)),
+        Some(e) => println!(
+            "  embedding {} ({}) — {}",
+            e.name,
+            e.backend,
+            ready_glyph(&e.ready)
+        ),
         None => println!("  embedding (not configured — RAG disabled)"),
     }
     match &m.cloud {
@@ -819,7 +877,8 @@ fn print_status_human(s: &StatusSnapshot) {
                 println!("    error: {err}");
             }
             if !db.languages.is_empty() {
-                let preview: Vec<String> = db.languages
+                let preview: Vec<String> = db
+                    .languages
                     .iter()
                     .take(6)
                     .map(|(k, v)| format!("{k}:{v}"))
@@ -839,8 +898,16 @@ fn print_status_human(s: &StatusSnapshot) {
         println!("  config:  {}", cp.display());
     }
     if let Some(r) = &s.runtime {
-        let warm_models = if r.warm_models.is_empty() { "(none)".to_string() } else { r.warm_models.join(", ") };
-        let warm_dbs = if r.warm_dbs.is_empty() { "(none)".to_string() } else { r.warm_dbs.join(", ") };
+        let warm_models = if r.warm_models.is_empty() {
+            "(none)".to_string()
+        } else {
+            r.warm_models.join(", ")
+        };
+        let warm_dbs = if r.warm_dbs.is_empty() {
+            "(none)".to_string()
+        } else {
+            r.warm_dbs.join(", ")
+        };
         println!("  pid: {}", r.pid);
         println!("  warm models: {warm_models}");
         println!("  warm dbs:    {warm_dbs}");
@@ -850,8 +917,7 @@ fn print_status_human(s: &StatusSnapshot) {
 async fn build_model_rows(ctx: &Arc<AppContext>) -> Vec<lv_tui::overlays::ModelRow> {
     use lv_tui::overlays::{LoadState, ModelRow, SlotId};
 
-    let warm: std::collections::HashSet<ModelTier> =
-        ctx.warm_tiers().await.into_iter().collect();
+    let warm: std::collections::HashSet<ModelTier> = ctx.warm_tiers().await.into_iter().collect();
     let active = ctx.active_tier().await;
     let cfg = &ctx.config;
 
@@ -865,7 +931,11 @@ async fn build_model_rows(ctx: &Arc<AppContext>) -> Vec<lv_tui::overlays::ModelR
             slot: SlotId::Chat(tier),
             name: slot.name.clone(),
             backend: slot.backend.clone(),
-            state: if warm.contains(&tier) { LoadState::Warm } else { LoadState::Cold },
+            state: if warm.contains(&tier) {
+                LoadState::Warm
+            } else {
+                LoadState::Cold
+            },
             active: tier == active,
             size_bytes: slot
                 .model_path
@@ -880,7 +950,11 @@ async fn build_model_rows(ctx: &Arc<AppContext>) -> Vec<lv_tui::overlays::ModelR
             slot: SlotId::Embedding,
             name: emb.name.clone(),
             backend: emb.backend.clone(),
-            state: if ctx.is_embedding_warm().await { LoadState::Warm } else { LoadState::Cold },
+            state: if ctx.is_embedding_warm().await {
+                LoadState::Warm
+            } else {
+                LoadState::Cold
+            },
             active: false,
             size_bytes: emb
                 .model_path
@@ -893,10 +967,7 @@ async fn build_model_rows(ctx: &Arc<AppContext>) -> Vec<lv_tui::overlays::ModelR
     rows
 }
 
-async fn emit_models_snapshot(
-    ctx: &Arc<AppContext>,
-    event_tx: &mpsc::Sender<AppEvent>,
-) {
+async fn emit_models_snapshot(ctx: &Arc<AppContext>, event_tx: &mpsc::Sender<AppEvent>) {
     let rows = build_model_rows(ctx).await;
     let _ = event_tx.send(AppEvent::ModelsSnapshot(rows)).await;
 }
@@ -905,7 +976,9 @@ async fn emit_warm_count(ctx: &Arc<AppContext>, event_tx: &mpsc::Sender<AppEvent
     let warm = ctx.warm_tiers().await;
     let emb_warm = ctx.is_embedding_warm().await;
     let total = warm.len() + emb_warm as usize;
-    let _ = event_tx.send(AppEvent::WarmCountChanged(total, false)).await;
+    let _ = event_tx
+        .send(AppEvent::WarmCountChanged(total, false))
+        .await;
 }
 
 fn active_tier_display(ctx: &Arc<AppContext>, tier: ModelTier) -> String {

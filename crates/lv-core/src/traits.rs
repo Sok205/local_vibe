@@ -1,7 +1,7 @@
+use crate::Result;
 use crate::config::Config;
 use crate::status::RuntimeStatus;
 use crate::types::*;
-use crate::Result;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -44,7 +44,13 @@ pub trait EmbeddingBackend: Send + Sync {
 #[async_trait]
 pub trait VectorStore: Send + Sync {
     async fn add_documents(&self, docs: &[Document]) -> Result<()>;
-    async fn search(&self, query: &[f32], limit: usize, threshold: f32, filter: &SearchFilter) -> Result<Vec<SearchResult>>;
+    async fn search(
+        &self,
+        query: &[f32],
+        limit: usize,
+        threshold: f32,
+        filter: &SearchFilter,
+    ) -> Result<Vec<SearchResult>>;
     async fn delete_by_hash(&self, file_hash: &str) -> Result<()>;
     async fn has_file(&self, file_hash: &str) -> Result<bool>;
     async fn stats(&self) -> Result<StoreStats>;

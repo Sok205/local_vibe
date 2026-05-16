@@ -4,10 +4,10 @@ use tokio::sync::{OnceCell, RwLock};
 
 use anyhow::Context;
 use async_trait::async_trait;
+use lv_core::Config;
 use lv_core::status::RuntimeStatus;
 use lv_core::traits::{AppHost, EmbeddingBackend, InferenceBackend, VectorStore};
 use lv_core::types::ModelTier;
-use lv_core::Config;
 use lv_inference::mlx_lm::MlxLmBackend;
 use lv_metal::MetalBackend;
 use lv_rag::code_graph::TreeSitterGraph;
@@ -84,10 +84,7 @@ impl AppContext {
             guard.contains_key(&tier)
         };
         if !is_warm {
-            anyhow::bail!(
-                "tier '{}' is not loaded; load it first",
-                tier.as_str()
-            );
+            anyhow::bail!("tier '{}' is not loaded; load it first", tier.as_str());
         }
         *self.active_tier.write().await = tier;
         Ok(())
@@ -104,9 +101,7 @@ impl AppContext {
             .await
             .with_context(|| format!("failed to load tier {}", tier.as_str()))?;
         let mut guard = self.inferences.write().await;
-        let entry = guard
-            .entry(tier)
-            .or_insert_with(|| Arc::clone(&backend));
+        let entry = guard.entry(tier).or_insert_with(|| Arc::clone(&backend));
         Ok(Arc::clone(entry))
     }
 
@@ -352,9 +347,7 @@ async fn build_inference_for(
     Ok(backend)
 }
 
-async fn build_embedding(
-    config: &Config,
-) -> anyhow::Result<Option<Arc<dyn EmbeddingBackend>>> {
+async fn build_embedding(config: &Config) -> anyhow::Result<Option<Arc<dyn EmbeddingBackend>>> {
     let Some(ref m) = config.models.embedding else {
         return Ok(None);
     };

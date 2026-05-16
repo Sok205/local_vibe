@@ -15,8 +15,7 @@ const RRF_K: f32 = 60.0;
 pub fn fuse(ranked_lists: &[Vec<String>]) -> Vec<(String, f32)> {
     let mut scores: HashMap<String, f32> = HashMap::new();
     for list in ranked_lists {
-        let mut seen_in_list: std::collections::HashSet<&str> =
-            std::collections::HashSet::new();
+        let mut seen_in_list: std::collections::HashSet<&str> = std::collections::HashSet::new();
         for (rank, id) in list.iter().enumerate() {
             if !seen_in_list.insert(id.as_str()) {
                 continue;
@@ -53,10 +52,7 @@ mod tests {
 
     #[test]
     fn item_only_in_one_list_still_ranks() {
-        let fused = fuse(&[
-            vec!["a".into()],
-            vec!["b".into()],
-        ]);
+        let fused = fuse(&[vec!["a".into()], vec!["b".into()]]);
         // Both at rank 0 -> tied.
         assert_eq!(fused.len(), 2);
         assert!((fused[0].1 - fused[1].1).abs() < 1e-6);

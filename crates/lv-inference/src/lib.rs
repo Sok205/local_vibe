@@ -1,8 +1,8 @@
 pub mod fastembed_backend;
 pub mod mlx_lm;
 
-use lv_core::error::VibeError;
 use lv_core::Result;
+use lv_core::error::VibeError;
 use std::path::PathBuf;
 
 pub fn find_mlx_lm() -> Result<PathBuf> {

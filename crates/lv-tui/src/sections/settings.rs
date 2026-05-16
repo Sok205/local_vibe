@@ -124,42 +124,38 @@ impl SettingsSection {
             Style::default().fg(Color::DarkGray),
         )));
 
-        let widget = Paragraph::new(lines)
-            .wrap(Wrap { trim: false })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Settings ")
-                    .border_style(Style::default().fg(Color::DarkGray)),
-            );
+        let widget = Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Settings ")
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
         frame.render_widget(widget, area);
     }
 
     fn draw_keybinds(&self, frame: &mut Frame, area: Rect) {
         let entries: &[(&str, &str)] = &[
-            ("F1..F5",       "switch section"),
-            ("Ctrl+1..5",    "same (fallback — Ctrl+1..3 silent on most macOS terms)"),
+            ("F1..F5", "switch section"),
+            (
+                "Ctrl+1..5",
+                "same (fallback — Ctrl+1..3 silent on most macOS terms)",
+            ),
             ("Ctrl+C, Ctrl+Q", "quit"),
-            ("Tab",          "cycle focus inside section"),
-            ("Esc",          "back out / dismiss peek"),
-            ("?",            "open this help (where not typing)"),
-            ("",             ""),
+            ("Tab", "cycle focus inside section"),
+            ("Esc", "back out / dismiss peek"),
+            ("?", "open this help (where not typing)"),
+            ("", ""),
             ("Chat — Enter", "send message"),
-            ("Chat — ↑↓",    "scroll history"),
+            ("Chat — ↑↓", "scroll history"),
             ("Models — Enter", "load + activate tier"),
             ("Models — l/u/a", "load / unload / set active"),
-            ("DBs — Enter",  "activate the selected DB"),
-            ("DBs — b",      "browse files in the DB"),
-            ("Index — Tab",  "path completion, then focus cycle"),
+            ("DBs — Enter", "activate the selected DB"),
+            ("DBs — b", "browse files in the DB"),
+            ("Index — Tab", "path completion, then focus cycle"),
             ("Index — Enter", "start indexing"),
         ];
 
-        let col_width = entries
-            .iter()
-            .map(|(k, _)| k.len())
-            .max()
-            .unwrap_or(0)
-            + 2;
+        let col_width = entries.iter().map(|(k, _)| k.len()).max().unwrap_or(0) + 2;
         let lines: Vec<Line> = entries
             .iter()
             .map(|(k, v)| {
@@ -199,10 +195,7 @@ impl SettingsSection {
 
 fn kv(key: &str, value: String) -> Line<'static> {
     Line::from(vec![
-        Span::styled(
-            format!("  {key:<14}"),
-            Style::default().fg(Color::Yellow),
-        ),
+        Span::styled(format!("  {key:<14}"), Style::default().fg(Color::Yellow)),
         Span::styled(value, Style::default().fg(Color::White)),
     ])
 }

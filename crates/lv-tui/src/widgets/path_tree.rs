@@ -62,13 +62,19 @@ impl PathTree {
     /// otherwise.
     pub fn activate(&mut self) -> std::io::Result<()> {
         match self.selected().cloned() {
-            Some(PathEntry { kind: EntryKind::Parent, .. }) => {
+            Some(PathEntry {
+                kind: EntryKind::Parent,
+                ..
+            }) => {
                 if let Some(parent) = self.current.parent() {
                     self.current = parent.to_path_buf();
                     self.refresh()?;
                 }
             }
-            Some(PathEntry { kind: EntryKind::Dir(p), .. }) => {
+            Some(PathEntry {
+                kind: EntryKind::Dir(p),
+                ..
+            }) => {
                 self.current = p;
                 self.refresh()?;
             }
@@ -80,8 +86,14 @@ impl PathTree {
     /// Returns the selected directory path if the current cursor is on one.
     pub fn selected_dir(&self) -> Option<PathBuf> {
         match self.selected()? {
-            PathEntry { kind: EntryKind::Dir(p), .. } => Some(p.clone()),
-            PathEntry { kind: EntryKind::Parent, .. } => self.current.parent().map(|p| p.to_path_buf()),
+            PathEntry {
+                kind: EntryKind::Dir(p),
+                ..
+            } => Some(p.clone()),
+            PathEntry {
+                kind: EntryKind::Parent,
+                ..
+            } => self.current.parent().map(|p| p.to_path_buf()),
             _ => None,
         }
     }
@@ -108,9 +120,15 @@ impl PathTree {
                         }
                         let path = e.path();
                         if file_type.is_dir() {
-                            Some(PathEntry { name, kind: EntryKind::Dir(path) })
+                            Some(PathEntry {
+                                name,
+                                kind: EntryKind::Dir(path),
+                            })
                         } else if file_type.is_file() {
-                            Some(PathEntry { name, kind: EntryKind::File(path) })
+                            Some(PathEntry {
+                                name,
+                                kind: EntryKind::File(path),
+                            })
                         } else {
                             None
                         }

@@ -1,2 +1,2 @@
 pub mod server;
-pub use server::{run_stdio, VibeMcpServer};
+pub use server::{VibeMcpServer, run_stdio};

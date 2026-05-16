@@ -34,9 +34,24 @@ impl StartupOverlay {
     pub fn new() -> Self {
         Self {
             items: vec![
-                Item { tier: ModelTier::Fast,   label: "Fast  ", desc: "small / quick responses",   enabled: true },
-                Item { tier: ModelTier::Medium, label: "Medium", desc: "balanced quality + speed",  enabled: true },
-                Item { tier: ModelTier::Strong, label: "Strong", desc: "best quality, heavy model", enabled: true },
+                Item {
+                    tier: ModelTier::Fast,
+                    label: "Fast  ",
+                    desc: "small / quick responses",
+                    enabled: true,
+                },
+                Item {
+                    tier: ModelTier::Medium,
+                    label: "Medium",
+                    desc: "balanced quality + speed",
+                    enabled: true,
+                },
+                Item {
+                    tier: ModelTier::Strong,
+                    label: "Strong",
+                    desc: "best quality, heavy model",
+                    enabled: true,
+                },
             ],
             cursor: 0,
         }
@@ -44,7 +59,11 @@ impl StartupOverlay {
 
     /// Returns the set of disabled tiers after the user confirms.
     pub fn confirm(&self) -> HashSet<ModelTier> {
-        self.items.iter().filter(|i| !i.enabled).map(|i| i.tier).collect()
+        self.items
+            .iter()
+            .filter(|i| !i.enabled)
+            .map(|i| i.tier)
+            .collect()
     }
 
     pub fn draw(&self, frame: &mut Frame, area: Rect) {
@@ -55,16 +74,24 @@ impl StartupOverlay {
         lines.push(Line::raw(""));
         lines.push(Line::from(Span::styled(
             "  Which chat models do you need this session?",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         )));
         lines.push(Line::raw(""));
 
         for (i, item) in self.items.iter().enumerate() {
             let is_cursor = i == self.cursor;
             let check = if item.enabled { "◉" } else { "○" };
-            let check_color = if item.enabled { Color::Green } else { Color::DarkGray };
+            let check_color = if item.enabled {
+                Color::Green
+            } else {
+                Color::DarkGray
+            };
             let label_style = if is_cursor {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else if item.enabled {
                 Style::default().fg(Color::White)
             } else {
@@ -72,7 +99,10 @@ impl StartupOverlay {
             };
             let cursor_indicator = if is_cursor { "▶ " } else { "  " };
             lines.push(Line::from(vec![
-                Span::styled(format!("  {cursor_indicator}"), Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    format!("  {cursor_indicator}"),
+                    Style::default().fg(Color::Cyan),
+                ),
                 Span::styled(check.to_string(), Style::default().fg(check_color)),
                 Span::raw("  "),
                 Span::styled(item.label.to_string(), label_style),

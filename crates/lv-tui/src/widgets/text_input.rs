@@ -16,7 +16,10 @@ impl Default for TextInput {
 
 impl TextInput {
     pub fn new() -> Self {
-        Self { buf: Vec::new(), cursor: 0 }
+        Self {
+            buf: Vec::new(),
+            cursor: 0,
+        }
     }
 
     pub fn with_value(value: &str) -> Self {

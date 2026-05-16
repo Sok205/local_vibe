@@ -24,8 +24,7 @@ pub fn write(db_path: &Path, meta: &LvMeta) -> std::io::Result<()> {
     std::fs::create_dir_all(db_path)?;
     let target = sidecar_path(db_path);
     let tmp = db_path.join(format!("{SIDECAR_NAME}.tmp"));
-    let content = toml::to_string_pretty(meta)
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    let content = toml::to_string_pretty(meta).map_err(|e| std::io::Error::other(e.to_string()))?;
     std::fs::write(&tmp, content)?;
     std::fs::rename(&tmp, &target)?;
     Ok(())

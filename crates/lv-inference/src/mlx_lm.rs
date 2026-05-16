@@ -1,12 +1,12 @@
 use crate::find_mlx_lm;
 use async_trait::async_trait;
 use futures::StreamExt;
+use lv_core::Result;
 use lv_core::error::VibeError;
 use lv_core::traits::InferenceBackend;
 use lv_core::types::{
     BackendHealth, CompletionChunk, CompletionRequest, CompletionStream, ModelInfo, ModelTier,
 };
-use lv_core::Result;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
@@ -199,12 +199,9 @@ impl InferenceBackend for MlxLmBackend {
 
                 buffer.push_str(&String::from_utf8_lossy(&bytes));
 
-                loop {
-                    let Some(newline_pos) = buffer.find('\n') else {
-                        break;
-                    };
+                while let Some(newline_pos) = buffer.find('\n') {
                     let line = buffer[..newline_pos].trim().to_string();
-                    buffer = buffer[newline_pos + 1..].to_string();
+                    buffer.drain(..=newline_pos);
 
                     if line.is_empty() {
                         continue;
@@ -224,7 +221,11 @@ impl InferenceBackend for MlxLmBackend {
                             if let Some(choice) = event.choices.into_iter().next() {
                                 let finished = choice.finish_reason.is_some();
                                 let delta = choice.delta.content.unwrap_or_default();
-                                if tx.send(Ok(CompletionChunk { delta, finished })).await.is_err() {
+                                if tx
+                                    .send(Ok(CompletionChunk { delta, finished }))
+                                    .await
+                                    .is_err()
+                                {
                                     return;
                                 }
                                 if finished {

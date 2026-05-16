@@ -7,10 +7,10 @@ use crate::sampler::Sampler;
 use crate::tokenizer::TokenizerWrapper;
 use async_trait::async_trait;
 use candle_core::{Device, Tensor};
-use lv_core::error::VibeError;
-use lv_core::types::*;
 use lv_core::Result;
+use lv_core::error::VibeError;
 use lv_core::traits::InferenceBackend;
+use lv_core::types::*;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -73,7 +73,11 @@ impl MetalBackend {
         info!("MetalBackend loaded: {}", model_name);
 
         Ok(Self {
-            inner: Arc::new(Mutex::new(MetalInner { model, tokenizer, last_session_id: None })),
+            inner: Arc::new(Mutex::new(MetalInner {
+                model,
+                tokenizer,
+                last_session_id: None,
+            })),
             model_name,
             tier,
         })
@@ -87,7 +91,9 @@ impl InferenceBackend for MetalBackend {
 
         // Tokenize the prompt while holding the lock briefly
         let (input_ids, device) = {
-            let guard = inner.lock().map_err(|e| VibeError::Inference(format!("lock poisoned: {e}")))?;
+            let guard = inner
+                .lock()
+                .map_err(|e| VibeError::Inference(format!("lock poisoned: {e}")))?;
             let prompt = guard.tokenizer.apply_chat_template(&req.messages);
             let tokens = guard.tokenizer.encode(&prompt)?;
             let device = guard.model.device().clone();
@@ -116,7 +122,8 @@ impl InferenceBackend for MetalBackend {
                     g
                 }
                 Err(e) => {
-                    let _ = tx.blocking_send(Err(VibeError::Inference(format!("lock poisoned: {e}"))));
+                    let _ =
+                        tx.blocking_send(Err(VibeError::Inference(format!("lock poisoned: {e}"))));
                     return;
                 }
             };
@@ -132,15 +139,16 @@ impl InferenceBackend for MetalBackend {
 
             // Prefill: run forward on full prompt
             let prompt_len = input_ids.len();
-            let input_tensor = match Tensor::new(input_ids.as_slice(), &device)
-                .and_then(|t| t.unsqueeze(0))
-            {
-                Ok(t) => t,
-                Err(e) => {
-                    let _ = tx.blocking_send(Err(VibeError::Inference(format!("tensor creation failed: {e}"))));
-                    return;
-                }
-            };
+            let input_tensor =
+                match Tensor::new(input_ids.as_slice(), &device).and_then(|t| t.unsqueeze(0)) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        let _ = tx.blocking_send(Err(VibeError::Inference(format!(
+                            "tensor creation failed: {e}"
+                        ))));
+                        return;
+                    }
+                };
 
             let logits = match guard.model.forward(&input_tensor, 0) {
                 Ok(l) => l,
@@ -154,7 +162,8 @@ impl InferenceBackend for MetalBackend {
             let mut logits = match logits.squeeze(0) {
                 Ok(l) => l,
                 Err(e) => {
-                    let _ = tx.blocking_send(Err(VibeError::Inference(format!("squeeze failed: {e}"))));
+                    let _ =
+                        tx.blocking_send(Err(VibeError::Inference(format!("squeeze failed: {e}"))));
                     return;
                 }
             };
@@ -185,23 +194,27 @@ impl InferenceBackend for MetalBackend {
                     }
                 };
 
-                if tx.blocking_send(Ok(CompletionChunk {
-                    delta: text,
-                    finished: false,
-                })).is_err() {
+                if tx
+                    .blocking_send(Ok(CompletionChunk {
+                        delta: text,
+                        finished: false,
+                    }))
+                    .is_err()
+                {
                     return; // receiver dropped
                 }
 
                 // Next forward pass with single token
-                let next_input = match Tensor::new(&[token_id], &device)
-                    .and_then(|t| t.unsqueeze(0))
-                {
-                    Ok(t) => t,
-                    Err(e) => {
-                        let _ = tx.blocking_send(Err(VibeError::Inference(format!("tensor creation failed: {e}"))));
-                        return;
-                    }
-                };
+                let next_input =
+                    match Tensor::new(&[token_id], &device).and_then(|t| t.unsqueeze(0)) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            let _ = tx.blocking_send(Err(VibeError::Inference(format!(
+                                "tensor creation failed: {e}"
+                            ))));
+                            return;
+                        }
+                    };
 
                 let raw_logits = match guard.model.forward(&next_input, prompt_len + i as usize) {
                     Ok(l) => l,
@@ -213,7 +226,9 @@ impl InferenceBackend for MetalBackend {
                 logits = match raw_logits.squeeze(0) {
                     Ok(l) => l,
                     Err(e) => {
-                        let _ = tx.blocking_send(Err(VibeError::Inference(format!("squeeze failed: {e}"))));
+                        let _ = tx.blocking_send(Err(VibeError::Inference(format!(
+                            "squeeze failed: {e}"
+                        ))));
                         return;
                     }
                 };

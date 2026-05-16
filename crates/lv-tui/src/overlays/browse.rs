@@ -9,7 +9,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::overlay::{centered, Overlay, OverlayAction};
+use crate::overlay::{Overlay, OverlayAction, centered};
 use crate::widgets::selectable_list::{Item, KeyOutcome, SelectableList};
 
 pub struct BrowseOverlay {
@@ -47,7 +47,11 @@ impl BrowseOverlay {
                     ),
                     Span::raw(f.file_path.clone()),
                     Span::styled(
-                        format!("  ({} chunk{})", f.chunk_count, if f.chunk_count == 1 { "" } else { "s" }),
+                        format!(
+                            "  ({} chunk{})",
+                            f.chunk_count,
+                            if f.chunk_count == 1 { "" } else { "s" }
+                        ),
                         Style::default().fg(Color::DarkGray),
                     ),
                 ]);
@@ -104,7 +108,11 @@ impl Overlay for BrowseOverlay {
 
         let rows = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(2), Constraint::Min(3), Constraint::Length(3)])
+            .constraints([
+                Constraint::Length(2),
+                Constraint::Min(3),
+                Constraint::Length(3),
+            ])
             .split(inner);
 
         // Filter line
@@ -137,7 +145,10 @@ impl Overlay for BrowseOverlay {
             } else {
                 Style::default().fg(Color::Green)
             };
-            pills.push(Span::styled(format!(" [{}] ", i + 1), Style::default().fg(Color::Yellow)));
+            pills.push(Span::styled(
+                format!(" [{}] ", i + 1),
+                Style::default().fg(Color::Yellow),
+            ));
             pills.push(Span::styled(format!("{lang}:{count}"), pill_style));
         }
         let hint = Line::from(Span::styled(
@@ -158,7 +169,9 @@ impl Overlay for BrowseOverlay {
     fn handle_key(&mut self, key: KeyEvent) -> OverlayAction {
         let outcome = self.list.handle_key(key);
         match outcome {
-            KeyOutcome::Consumed | KeyOutcome::Unhandled | KeyOutcome::Activate(_) => OverlayAction::None,
+            KeyOutcome::Consumed | KeyOutcome::Unhandled | KeyOutcome::Activate(_) => {
+                OverlayAction::None
+            }
             KeyOutcome::Escape => OverlayAction::Dismiss,
             KeyOutcome::Key(k) => match k.code {
                 KeyCode::Char('0') => {

@@ -92,7 +92,13 @@ impl IndexSection {
             rows[0],
         );
 
-        self.draw_field(frame, rows[1], "Path", &self.path, self.focus == Focus::Path);
+        self.draw_field(
+            frame,
+            rows[1],
+            "Path",
+            &self.path,
+            self.focus == Focus::Path,
+        );
         self.draw_field(frame, rows[2], "Into", &self.db, self.focus == Focus::Db);
 
         frame.render_widget(
@@ -120,24 +126,19 @@ impl IndexSection {
         } else {
             Color::DarkGray
         };
-        let title = Line::from(vec![
-            Span::styled(
-                format!(" {label} "),
-                Style::default()
-                    .fg(if focused { Color::Cyan } else { Color::Yellow })
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]);
-        let widget = Paragraph::new(Line::from(vec![
-            Span::raw(" "),
-            Span::raw(input.as_str()),
-        ]))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(Style::default().fg(border)),
-        );
+        let title = Line::from(vec![Span::styled(
+            format!(" {label} "),
+            Style::default()
+                .fg(if focused { Color::Cyan } else { Color::Yellow })
+                .add_modifier(Modifier::BOLD),
+        )]);
+        let widget = Paragraph::new(Line::from(vec![Span::raw(" "), Span::raw(input.as_str())]))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(title)
+                    .border_style(Style::default().fg(border)),
+            );
         frame.render_widget(widget, area);
 
         if focused {
@@ -259,10 +260,7 @@ impl IndexSection {
             return SectionOutcome::Consumed;
         }
         self.submitting = true;
-        SectionOutcome::RunCommand(AppCommand::Index {
-            path,
-            db: Some(db),
-        })
+        SectionOutcome::RunCommand(AppCommand::Index { path, db: Some(db) })
     }
 
     pub fn keyhints(&self) -> &'static str {

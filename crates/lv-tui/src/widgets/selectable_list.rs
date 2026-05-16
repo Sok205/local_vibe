@@ -22,7 +22,11 @@ impl<T> Item<T> {
             .iter()
             .map(|s| s.content.as_ref())
             .collect::<String>();
-        Self { display, plain, meta }
+        Self {
+            display,
+            plain,
+            meta,
+        }
     }
 }
 
@@ -209,7 +213,7 @@ impl<T> SelectableList<T> {
                         scored.push((i, score));
                     }
                 }
-                scored.sort_by(|a, b| b.1.cmp(&a.1));
+                scored.sort_by_key(|&(_, score)| std::cmp::Reverse(score));
                 self.filtered = scored.into_iter().map(|(i, _)| i).collect();
             }
         }

@@ -2,8 +2,8 @@ use candle_core::quantized::gguf_file;
 use candle_core::{Device, Tensor};
 use candle_transformers::models::quantized_llama::ModelWeights as LlamaWeights;
 use candle_transformers::models::quantized_qwen2::ModelWeights as Qwen2Weights;
-use lv_core::error::VibeError;
 use lv_core::Result;
+use lv_core::error::VibeError;
 use std::path::Path;
 use tracing::info;
 
@@ -53,14 +53,16 @@ impl QuantizedModel {
         let inner = match arch.as_str() {
             "qwen2" => {
                 info!("using Qwen2 quantized backend");
-                let weights = Qwen2Weights::from_gguf(content, &mut file, device)
-                    .map_err(|e| VibeError::Inference(format!("failed to load Qwen2 weights: {e}")))?;
+                let weights = Qwen2Weights::from_gguf(content, &mut file, device).map_err(|e| {
+                    VibeError::Inference(format!("failed to load Qwen2 weights: {e}"))
+                })?;
                 ModelInner::Qwen2(weights)
             }
             _ => {
                 info!("using LLaMA quantized backend for architecture '{arch}'");
-                let weights = LlamaWeights::from_gguf(content, &mut file, device)
-                    .map_err(|e| VibeError::Inference(format!("failed to load LLaMA weights: {e}")))?;
+                let weights = LlamaWeights::from_gguf(content, &mut file, device).map_err(|e| {
+                    VibeError::Inference(format!("failed to load LLaMA weights: {e}"))
+                })?;
                 ModelInner::Llama(weights)
             }
         };

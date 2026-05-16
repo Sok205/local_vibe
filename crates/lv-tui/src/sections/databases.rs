@@ -46,7 +46,9 @@ impl DatabasesSection {
     fn make_item(db: DbStatus) -> Item<DbStatus> {
         let marker = if db.is_current { "▸" } else { " " };
         let name_style = if db.is_current {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };
@@ -86,10 +88,7 @@ impl DatabasesSection {
         self.draw_detail(frame, cols[1]);
 
         let footer_line = if let Some(msg) = &self.footer_msg {
-            Line::from(Span::styled(
-                msg.clone(),
-                Style::default().fg(Color::Red),
-            ))
+            Line::from(Span::styled(msg.clone(), Style::default().fg(Color::Red)))
         } else if !self.loaded_once {
             Line::from(Span::styled(
                 " loading…",
@@ -148,14 +147,12 @@ impl DatabasesSection {
         }
 
         frame.render_widget(
-            Paragraph::new(lines)
-                .wrap(Wrap { trim: false })
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(title)
-                        .border_style(Style::default().fg(Color::DarkGray)),
-                ),
+            Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(title)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            ),
             area,
         );
     }
@@ -167,16 +164,12 @@ impl DatabasesSection {
             KeyOutcome::Unhandled => SectionOutcome::Unhandled,
             KeyOutcome::Escape => SectionOutcome::Consumed,
             KeyOutcome::Activate(_) => match self.dbs.selected_meta() {
-                Some(db) => {
-                    SectionOutcome::RunCommand(AppCommand::SwitchDb(db.name.clone()))
-                }
+                Some(db) => SectionOutcome::RunCommand(AppCommand::SwitchDb(db.name.clone())),
                 None => SectionOutcome::Consumed,
             },
             KeyOutcome::Key(k) => match k.code {
                 KeyCode::Char('b') => match self.dbs.selected_meta() {
-                    Some(db) => {
-                        SectionOutcome::RunCommand(AppCommand::Browse(db.name.clone()))
-                    }
+                    Some(db) => SectionOutcome::RunCommand(AppCommand::Browse(db.name.clone())),
                     None => SectionOutcome::Consumed,
                 },
                 _ => SectionOutcome::Unhandled,
@@ -191,10 +184,7 @@ impl DatabasesSection {
 
 fn kv_line(key: &str, value: String) -> Line<'static> {
     Line::from(vec![
-        Span::styled(
-            format!("{key:<11} "),
-            Style::default().fg(Color::Yellow),
-        ),
+        Span::styled(format!("{key:<11} "), Style::default().fg(Color::Yellow)),
         Span::styled(value, Style::default().fg(Color::White)),
     ])
 }

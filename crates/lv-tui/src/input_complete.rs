@@ -14,7 +14,9 @@ pub fn complete_path(partial: &str) -> Option<String> {
     let mut candidates: Vec<String> = Vec::new();
     for entry in entries.flatten() {
         let name_os = entry.file_name();
-        let Some(name) = name_os.to_str() else { continue };
+        let Some(name) = name_os.to_str() else {
+            continue;
+        };
         if !name.starts_with(&stem) {
             continue;
         }

@@ -4,12 +4,12 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
+use axum::Router;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
-use axum::Router;
 use futures::{Stream, StreamExt};
 use lv_core::types::{CompletionRequest, Message, ModelTier, Role};
 use serde_json::json;
@@ -109,7 +109,10 @@ async fn chat_completions(
     let tier = resolve_tier(&req.model, &state.ctx.config);
 
     if let Err(e) = state.ctx.load_model(tier).await {
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("load model: {e}"));
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("load model: {e}"),
+        );
     }
     if let Err(e) = state.ctx.set_active_tier(tier).await {
         return error_response(
@@ -276,7 +279,11 @@ async fn collect_response(
             index: 0,
             message: ChatMessage {
                 role: "assistant".to_string(),
-                content: if content.is_empty() { None } else { Some(content) },
+                content: if content.is_empty() {
+                    None
+                } else {
+                    Some(content)
+                },
                 tool_calls: if tool_calls.is_empty() {
                     None
                 } else {

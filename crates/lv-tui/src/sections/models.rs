@@ -96,7 +96,9 @@ impl ModelsSection {
         };
         let active_suffix = if row.active { "*" } else { " " };
         let active_style = if row.active {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };
@@ -108,7 +110,10 @@ impl ModelsSection {
                 format!("{:8}", row.backend),
                 Style::default().fg(Color::DarkGray),
             ),
-            Span::styled(format!("{size_text:>9}  "), Style::default().fg(Color::White)),
+            Span::styled(
+                format!("{size_text:>9}  "),
+                Style::default().fg(Color::White),
+            ),
             Span::styled(state_text.to_string(), Style::default().fg(state_color)),
             Span::raw("  "),
             Span::styled(active_suffix.to_string(), Style::default().fg(Color::Cyan)),
@@ -136,10 +141,7 @@ impl ModelsSection {
         );
 
         let footer_line = if let Some(msg) = &self.footer_msg {
-            Line::from(Span::styled(
-                msg.clone(),
-                Style::default().fg(Color::Red),
-            ))
+            Line::from(Span::styled(msg.clone(), Style::default().fg(Color::Red)))
         } else if self.list.items().is_empty() {
             Line::from(Span::styled(
                 " loading…",

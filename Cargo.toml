@@ -11,7 +11,15 @@ members = [
 ]
 
 [workspace.package]
+version = "0.1.0"
+edition = "2024"
 license = "MIT OR Apache-2.0"
+authors = ["Filip Sokołowski"]
+repository = "https://github.com/Sok205/local_vibe"
+homepage = "https://github.com/Sok205/local_vibe"
+readme = "README.md"
+keywords = ["llm", "rag", "mcp", "semantic-search", "metal"]
+categories = ["command-line-utilities", "text-processing"]
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }
