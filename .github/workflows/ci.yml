@@ -21,16 +21,11 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy-and-test:
-    name: clippy + test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            workspace_args: --workspace
-          - os: ubuntu-latest
-            workspace_args: --workspace --exclude lv-metal
+    # macOS only for now: lv-cli hard-depends on lv-metal, which is
+    # Apple-Silicon-bound via objc2. Re-add `ubuntu-latest` once metal
+    # is gated behind an optional cargo feature.
+    name: clippy + test (macos-latest)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -41,5 +36,5 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - run: cargo clippy ${{ matrix.workspace_args }} --all-targets -- -D warnings
-      - run: cargo test ${{ matrix.workspace_args }} --no-fail-fast
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace --no-fail-fast
