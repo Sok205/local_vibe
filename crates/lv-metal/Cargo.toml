@@ -6,9 +6,9 @@ license.workspace = true
 
 [dependencies]
 lv-core = { path = "../lv-core" }
-candle-core = { git = "https://github.com/Sok205/candle", rev = "235f1e9", features = ["metal"] }
-candle-nn = { git = "https://github.com/Sok205/candle", rev = "235f1e9", features = ["metal"] }
-candle-transformers = { git = "https://github.com/Sok205/candle", rev = "235f1e9", features = ["metal"] }
+candle-core = { git = "https://github.com/huggingface/candle", rev = "525b81e626f7eec1e7a694db59a2ad3115b2575c", features = ["metal"] }
+candle-nn = { git = "https://github.com/huggingface/candle", rev = "525b81e626f7eec1e7a694db59a2ad3115b2575c", features = ["metal"] }
+candle-transformers = { git = "https://github.com/huggingface/candle", rev = "525b81e626f7eec1e7a694db59a2ad3115b2575c", features = ["metal"] }
 tokenizers = "0.21"
 tokio = { workspace = true }
 async-trait = { workspace = true }
